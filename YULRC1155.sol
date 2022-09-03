@@ -1,4 +1,198 @@
 /**
+ * YULRC1155
+ * 
+ * An implementation of the ERC1155 token standard written entirely in Yul.
+ */
+object "YULRC1155" {
+
+    code {
+        // Deploy the contract
+        datacopy(0, dataoffset("runtime"), datasize("runtime"))
+        return(0, datasize("runtime"))
+    }
+
+    object "runtime" {
+
+        code {
+            /**
+             * Storage slots
+             */
+            // 0: mapping uint256 tokenID => (address account => uint256 balance)
+            function balancesSlot() -> slot { slot := 0 }
+
+            // 1: mapping address account => (address operator => bool approved)
+            function operatorApprovalsSlot() -> slot { slot := 1 }
+
+            /**
+             * Dispatcher
+             * 
+             * Dispatches to relevant function based on (calldata) function 
+             * selector (the first 4 bytes of keccak256(functionSignature)).
+             */
+            switch functionSelector()
+            // balanceOf(address,uint256)
+            case 0x00fdd58e {
+                returnUint(balanceOf(decodeAsAddress(0), decodeAsUint(1)))
+            }
+            // balanceOfBatch(address[],uint256[])
+            case 0x4e1273f4 {
+                // returnUintArray(decodeAsAddressArray(0), decodeAsUintArray(1))
+            }
+            // setApprovalForAll(address,bool)
+            case 0xa22cb465 {
+                setApprovalForAll(decodeAsAddress(0), decodeAsBool(1))
+            }
+            // isApprovedForAll(address,address)
+            case 0xe985e9c5 {
+                returnBool(isApprovedForAll(decodeAsAddress(0), decodeAsAddress(1)))
+            }
+            // safeTransferFrom(address,address,uint256,uint256,bytes)
+            case 0xf242432a {
+                // safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsBytes(4))
+            }
+            // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
+            case 0x2eb2c2d6 {
+                // safeBatchTransferFrom(decodeAsAddressArray(0), decodeAsAddressArray(1), decodeAsUintArray(2), decodeAsUintArray(3), decodeAsBytes(4))
+            }
+            default {
+                revert(0, 0)
+            }
+
+            /**
+             * ERC1155 functions
+             */
+            function balanceOf(account, id) -> accountBalance {
+                accountBalance := id
+            }
+            // function balanceOfBatch(accounts, ids) -> accountBalanceArray {}
+            function setApprovalForAll(operator, approved) {
+                // isApproved := approved
+            }
+            function isApprovedForAll(account, operator) -> isApproved {
+                isApproved := 1
+            }
+            function safeTransferFrom(from, to, id, amount, data) {
+
+            }
+            function safeBatchTransferFrom(from, to, ids, amounts, data) {
+                
+            }
+
+            /**
+             * Calldata decoding functions
+             */
+            function functionSelector() -> selector {
+                // `div` shifts right by 224 bits leaving the first 4 bytes
+                selector := div(calldataload(0), 0x100000000000000000000000000000000000000000000000000000000)
+                // Note: shifting would be preferrable as it costs less gas
+            }
+            function decodeAsAddress(offset) -> value {
+                value := decodeAsUint(offset)
+                revertIfNotValidAddress(value)
+            }
+            function decodeAsAddressArray(offset) -> value {
+                value := decodeAsArray(offset)
+                // check address validity in array?
+            }
+            function decodeAsUintArray(offset) -> value {
+                value := decodeAsArray(offset)
+            }
+            function decodeAsArray(offset) -> value {
+                let bitOffsetOfArrayPosition := add(4, mul(offset, 0x20))
+                let bitOffsetOfArray := calldataload(bitOffsetOfArrayPosition)
+                let offsetOfArray := div(bitOffsetOfArray, 0x20)
+                let arrayLength := calldataload(bitOffsetOfArray)
+
+                if iszero(arrayLength) {
+                    // Return empty array
+                    mstore(0x00, 0)
+                    return(0x00, 0x20)
+                }
+
+                // Starting at offsetOfArray + 1, loop to offsetOfArry + arrayLength
+                for { let i := add(offsetOfArray, 1) } lt(i, add(offsetOfArray, arrayLength)) { i := add(i, 1) }
+                {
+                    // 
+                }
+
+                // mstore(0x00, data1)
+                // mstore(0x20, data2)
+                // return (0x00, 0x40)
+
+                // revertIfPositionNotInCalldata(position)
+            }
+            function decodeAsUint(offset) -> value {
+                // Ignoring the  first 4 bytes (function selector), get the 
+                // position of the word at calldata `offset`.
+                let position := add(4, mul(offset, 0x20))
+                // Revert if calldata contains no word at this position
+                revertIfPositionNotInCalldata(position)
+                // Get the word at calldata `position`
+                value := calldataload(position)
+            }
+            function decodeAsBool(offset) -> value {
+                let position := add(4, mul(offset, 0x20))
+                revertIfPositionNotInCalldata(position)
+                let valueAtPosition := calldataload(position)
+                revertIfNotBool(valueAtPosition)
+                value := valueAtPosition
+            }
+            function decodeAsBytes(offset) {
+
+            }
+
+            /**
+             * Calldata encoding functions
+             */
+            function returnUint(value) {
+                // Save word `value` to memory at slot 0
+                mstore(0, value)
+                // Return word ('0x20' or 32 bits) from memory slot 0
+                return(0, 0x20)
+            }
+            function returnBool(value) {
+                revertIfNotBool(value)
+                mstore(0, value)
+                return(0, 0x20)
+            }
+
+            /**
+             * Utility functions
+             * 
+             * @note if iszero(eq(a, b)) revert pattern
+             */
+            function revertIfPositionNotInCalldata(position) {
+                // Require `position` exists within calldata
+                if lt(calldatasize(), add(position, 0x20)) {
+                    revert(0, 0)
+                }
+            }
+            function revertIfNotValidAddress(value) {
+                // Require `address` is valid (and not the zero address)
+                if iszero(iszero(and(value, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
+                    revert(0, 0)
+                }
+            }
+            function revertIfNotBool(value) {
+                let isBool := 0
+
+                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000000) {
+                    isBool := 1
+                }
+                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000001) {
+                    isBool := 1
+                }
+
+                // Require `value` is a bool
+                if iszero(isBool) {
+                    revert(0, 0)
+                }
+            }
+        }
+    }
+}
+
+/**
 NOTES
 
 Calldata example:
@@ -117,181 +311,3 @@ data "Foo" "Bar"
 and will not collide (accountToStorageOffset)
 
  */
-
-object "YULRC1155" {
-
-    code {
-        // declare state variables here?
-        // sstore(0, caller()) // store msg.sender in slot 0
-        // function owner() return sload(0)
-
-        // Deploy the contract
-        datacopy(0, dataoffset("runtime"), datasize("runtime"))
-        return(0, datasize("runtime"))
-    }
-
-    object "runtime" {
-
-        code {
-            /**
-             * Storage layout
-             */
-            // Mapping uint256 token ID => (address account => uint256 balance)
-            function balancesSlot() -> slot { slot := 0 }
-
-            // Mapping address account => (address operator => bool approved)
-            function operatorApprovalsSlot() -> slot { slot := 1 }
-
-            // accountToStorageOffset ?
-
-            /**
-             * @dev Dispatch to relevant function based on (calldata) function 
-             * selector (the first 4 bytes of keccak256(functionSignature)).
-             */
-            switch getFunctionSelector()
-            // balanceOf(address,uint256)
-            case 0x00fdd58e {
-                returnUint(balanceOf(decodeAsAddress(0), decodeAsUint(1)))
-            }
-            // balanceOfBatch(address[],uint256[])
-            case 0x4e1273f4 {
-                // returnUintArray(decodeAsAddressArray(0), decodeAsUintArray(1))
-            }
-            // setApprovalForAll(address,bool)
-            case 0xa22cb465 {
-                setApprovalForAll(decodeAsAddress(0), decodeAsBool(1))
-            }
-            // isApprovedForAll(address,address)
-            case 0xe985e9c5 {
-                returnBool(isApprovedForAll(decodeAsAddress(0), decodeAsAddress(1)))
-            }
-            // safeTransferFrom(address,address,uint256,uint256,bytes)
-            case 0xf242432a {
-                // safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsBytes(4))
-            }
-            // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
-            case 0x2eb2c2d6 {
-                // safeBatchTransferFrom(decodeAsAddressArray(0), decodeAsAddressArray(1), decodeAsUintArray(2), decodeAsUintArray(3), decodeAsBytes(4))
-            }
-            default {
-                revert(0, 0)
-            }
-
-            function balanceOf(account, id) -> accountBalance {
-                accountBalance := id
-            }
-            // function balanceOfBatch(accounts, ids) -> accountBalanceArray {}
-            function setApprovalForAll(operator, approved) {
-                // isApproved := approved
-            }
-            function isApprovedForAll(account, operator) -> isApproved {
-                isApproved := 1
-            }
-            function safeTransferFrom(from, to, id, amount, data) {}
-            function safeBatchTransferFrom(from, to, ids, amounts, data) {}
-
-            /**
-             * Calldata decoding functions
-             */
-            function getFunctionSelector() -> functionSelector {
-                // `div` shifts right by 224 bits leaving the first 4 bytes
-                functionSelector := div(calldataload(0), 0x100000000000000000000000000000000000000000000000000000000)
-                // Note: shifting would be preferrable as it costs less gas
-            }
-            function decodeAsAddress(offset) -> value {
-                value := decodeAsUint(offset)
-                revertIfNotValidAddress(value)
-            }
-            // function decodeAsAddressArray(offset) -> value {}
-            // function decodeAsUintArray(offset) -> value {}
-            function decodeAsArray(offset) -> value {
-                let bitOffsetOfArrayPosition := add(4, mul(offset, 0x20))
-                let bitOffsetOfArray := calldataload(bitOffsetOfArrayPosition)
-                let offsetOfArray := div(bitOffsetOfArray, 0x20)
-                let arrayLength := calldataload(bitOffsetOfArray)
-
-                if iszero(arrayLength) {
-                    // Return empty array
-                    mstore(0x00, 0)
-                    return(0x00, 0x20)
-                }
-
-                // Starting at offsetOfArray + 1, loop to offsetOfArry + arrayLength
-                for { let i := add(offsetOfArray, 1) } lt(i, add(offsetOfArray, arrayLength)) { i := add(i, 1) }
-                {
-                    // 
-                }
-
-                // mstore(0x00, data1)
-                // mstore(0x20, data2)
-                // return (0x00, 0x40)
-
-                // revertIfPositionNotInCalldata(position)
-            }
-            function decodeAsUint(offset) -> value {
-                // Ignoring the  first 4 bytes (function selector), get the 
-                // position of the word at calldata `offset`.
-                let position := add(4, mul(offset, 0x20))
-                // Revert if calldata contains no word at this position
-                revertIfPositionNotInCalldata(position)
-                // Get the word at calldata `position`
-                value := calldataload(position)
-            }
-            function decodeAsBool(offset) -> value {
-                let position := add(4, mul(offset, 0x20))
-                revertIfPositionNotInCalldata(position)
-                let valueAtPosition := calldataload(position)
-                revertIfNotBool(valueAtPosition)
-                value := valueAtPosition
-            }
-            // function decodeAsBytes(offset) {}
-
-            /**
-             * Calldata encoding functions
-             */
-            function returnUint(value) {
-                // Save word `value` to memory at slot 0
-                mstore(0, value)
-                // Return word ('0x20' or 32 bits) from memory slot 0
-                return(0, 0x20)
-            }
-            function returnBool(value) {
-                revertIfNotBool(value)
-                mstore(0, value)
-                return(0, 0x20)
-            }
-
-            /**
-             * Utility functions
-             */
-            function revertIfPositionNotInCalldata(position) {
-                if lt(calldatasize(), add(position, 0x20)) {
-                    revert(0, 0)
-                }
-            }
-
-            // if iszero(eq(a, b)) revert pattern
-
-            function revertIfNotValidAddress(value) {
-                // Verify this really is an address (and not the zero address)
-                if iszero(iszero(and(value, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
-                    revert(0, 0)
-                }
-            }
-            function revertIfNotBool(value) {
-                let isBool := 0
-
-                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000000) {
-                    isBool := 1
-                }
-                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000001) {
-                    isBool := 1
-                }
-
-                if iszero(isBool) {
-                    revert(0, 0)
-                }
-            }
-        }
-    }
-}
