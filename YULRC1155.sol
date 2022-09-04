@@ -48,11 +48,27 @@ object "YULRC1155" {
             }
             // safeTransferFrom(address,address,uint256,uint256,bytes)
             case 0xf242432a {
-                // safeTransferFrom(decodeAsAddress(0), decodeAsAddress(1), decodeAsUint(2), decodeAsUint(3), decodeAsBytes(4))
+                // safeTransferFrom(
+                //     decodeAsAddress(0), 
+                //     decodeAsAddress(1), 
+                //     decodeAsUint(2), 
+                //     decodeAsUint(3), 
+                //     decodeAsBytes(4)
+                // )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
             case 0x2eb2c2d6 {
-                // safeBatchTransferFrom(decodeAsAddressArray(0), decodeAsAddressArray(1), decodeAsUintArray(2), decodeAsUintArray(3), decodeAsBytes(4))
+                // safeBatchTransferFrom(
+                //     decodeAsAddressArray(0), 
+                //     decodeAsAddressArray(1), 
+                //     decodeAsUintArray(2), 
+                //     decodeAsUintArray(3), 
+                //     decodeAsBytes(4)
+                // )
+            }
+            // mint(address,uint256,uint256)
+            case 0x156e29f6 {
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2))
             }
             default {
                 revert(0, 0)
@@ -61,10 +77,22 @@ object "YULRC1155" {
             /**
              * ERC1155 functions
              */
-            function balanceOf(account, id) -> accountBalance {
-                accountBalance := id
+            function getAccountBalanceLocation(account, id) -> balanceLocation {
+                // Balances: mapping uint256 tokenID => (address account => uint256 balance)
+                
+                // Hash `id` and `balancesSlot()`
+                let hashOfIdandBalancesSlot := keccakHashTwoValues(id, balancesSlot())
+
+                // `balanceLocation` = keccak256(`account`, keccak256(`id`, `balancesSlot()`))
+                balanceLocation := keccakHashTwoValues(account, hashOfIdandBalancesSlot)
             }
-            // function balanceOfBatch(accounts, ids) -> accountBalanceArray {}
+            function balanceOf(account, id) -> accountBalance {
+                let balanceLocation := getAccountBalanceLocation(account, id)
+                accountBalance := sload(balanceLocation)
+            }
+            function balanceOfBatch(accounts, ids) -> accountBalanceArray {
+
+            }
             function setApprovalForAll(operator, approved) {
                 // isApproved := approved
             }
@@ -77,6 +105,16 @@ object "YULRC1155" {
             function safeBatchTransferFrom(from, to, ids, amounts, data) {
                 
             }
+            // function setURI(newuri) {}
+            function mint(to, id, amount) {
+                let balanceLocation := getAccountBalanceLocation(to, id)
+                let accountBalance := sload(balanceLocation)
+
+                sstore(balanceLocation, add(accountBalance, amount))
+            }
+            // function mintBatch(to, ids, amounts) {}
+            // function burn(from, id, amount) {}
+            // function burnBatch(from, ids, amounts) {}
 
             /**
              * Calldata decoding functions
@@ -93,6 +131,7 @@ object "YULRC1155" {
             function decodeAsAddressArray(offset) -> value {
                 value := decodeAsArray(offset)
                 // check address validity in array?
+                // or duplicate the decodeArray logic in here?
             }
             function decodeAsUintArray(offset) -> value {
                 value := decodeAsArray(offset)
@@ -100,7 +139,7 @@ object "YULRC1155" {
             function decodeAsArray(offset) -> value {
                 let bitOffsetOfArrayPosition := add(4, mul(offset, 0x20))
                 let bitOffsetOfArray := calldataload(bitOffsetOfArrayPosition)
-                let offsetOfArray := div(bitOffsetOfArray, 0x20)
+                let byteOffsetOfArray := div(bitOffsetOfArray, 0x20)
                 let arrayLength := calldataload(bitOffsetOfArray)
 
                 if iszero(arrayLength) {
@@ -109,8 +148,8 @@ object "YULRC1155" {
                     return(0x00, 0x20)
                 }
 
-                // Starting at offsetOfArray + 1, loop to offsetOfArry + arrayLength
-                for { let i := add(offsetOfArray, 1) } lt(i, add(offsetOfArray, arrayLength)) { i := add(i, 1) }
+                // Starting at byteOffsetOfArray + 1, loop to offsetOfArry + arrayLength
+                for { let i := add(byteOffsetOfArray, 1) } lt(i, add(byteOffsetOfArray, arrayLength)) { i := add(i, 1) }
                 {
                     // 
                 }
@@ -133,8 +172,10 @@ object "YULRC1155" {
             function decodeAsBool(offset) -> value {
                 let position := add(4, mul(offset, 0x20))
                 revertIfPositionNotInCalldata(position)
+
                 let valueAtPosition := calldataload(position)
                 revertIfNotBool(valueAtPosition)
+
                 value := valueAtPosition
             }
             function decodeAsBytes(offset) {
@@ -157,7 +198,12 @@ object "YULRC1155" {
             }
 
             /**
-             * Utility functions
+             * Storage access functions
+             */
+            // function 
+
+            /**
+             * Gating functions
              * 
              * @note if iszero(eq(a, b)) revert pattern
              */
@@ -168,7 +214,7 @@ object "YULRC1155" {
                 }
             }
             function revertIfNotValidAddress(value) {
-                // Require `address` is valid (and not the zero address)
+                // Require `value` is valid address (and not the zero address)
                 if iszero(iszero(and(value, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
                     revert(0, 0)
                 }
@@ -188,6 +234,25 @@ object "YULRC1155" {
                     revert(0, 0)
                 }
             }
+
+            /**
+             * Utility functions
+             */
+            function keccakHashTwoValues(valueOne, valueTwo) -> keccakHash {
+                // Load `freeMemoryPointer`
+                let freeMemoryPointer := mload(0x40)
+
+                // Store words `valueOne` and `valueTwo` at `freeMemoryPointer`
+                mstore(freeMemoryPointer, valueOne)
+                mstore(add(freeMemoryPointer, 0x20), valueTwo)
+
+                // Increment `freeMemoryPointer` by two words ?
+                // mstore(0x40, add(freeMemoryPointer, 0x40))
+
+                mstore(0x00, keccak256(freeMemoryPointer, 0x40))
+
+                keccakHash := mload(0x00)
+            }
         }
     }
 }
@@ -200,8 +265,6 @@ Calldata example:
 Function selector:   0x00fdd58e
 First arg (address): 0000000000000000000000005B38Da6a701c568545dCfcB03FcB875f56beddC4
 Second arg (uint):   000000000000000000000000000000000000000000000000000000000000002a
-
-(address[], uint256[])
 
 Calldata with array args (address[], uint256[]):
 0x
@@ -269,7 +332,7 @@ mstore(0x00, 0xff..ff) // 32 bytes of 1's
 - solidity allocates slots 0x00-0x20), 0x20-0x40) for "scratch space"
 - reserves slot 0x40-0x60) as the "free memory pointer"
 - keeps slot 0x60-0x80) open
-- action begins in slot 0x80
+  - action begins in slot 0x80
 
 solidity uses memory for:
 - abi.encode or abi.encodePacked
