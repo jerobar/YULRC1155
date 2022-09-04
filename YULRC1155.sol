@@ -48,13 +48,13 @@ object "YULRC1155" {
             }
             // safeTransferFrom(address,address,uint256,uint256,bytes)
             case 0xf242432a {
-                // safeTransferFrom(
-                //     decodeAsAddress(0), 
-                //     decodeAsAddress(1), 
-                //     decodeAsUint(2), 
-                //     decodeAsUint(3), 
-                //     decodeAsBytes(4)
-                // )
+                safeTransferFrom(
+                    decodeAsAddress(0), 
+                    decodeAsAddress(1), 
+                    decodeAsUint(2), 
+                    decodeAsUint(3), 
+                    0 // decodeAsBytes(4)
+                )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
             case 0x2eb2c2d6 {
@@ -69,6 +69,7 @@ object "YULRC1155" {
             // mint(address,uint256,uint256)
             case 0x156e29f6 {
                 mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2))
+                returnUint(43)
             }
             default {
                 revert(0, 0)
@@ -77,15 +78,6 @@ object "YULRC1155" {
             /**
              * ERC1155 functions
              */
-            function getAccountBalanceLocation(account, id) -> balanceLocation {
-                // Balances: mapping uint256 tokenID => (address account => uint256 balance)
-                
-                // Hash `id` and `balancesSlot()`
-                let hashOfIdandBalancesSlot := keccakHashTwoValues(id, balancesSlot())
-
-                // `balanceLocation` = keccak256(`account`, keccak256(`id`, `balancesSlot()`))
-                balanceLocation := keccakHashTwoValues(account, hashOfIdandBalancesSlot)
-            }
             function balanceOf(account, id) -> accountBalance {
                 let balanceLocation := getAccountBalanceLocation(account, id)
                 accountBalance := sload(balanceLocation)
@@ -100,7 +92,20 @@ object "YULRC1155" {
                 isApproved := 1
             }
             function safeTransferFrom(from, to, id, amount, data) {
+                // Decrement `from` account balance for `id` by `amount`
+                let fromAccountBalanceLocation := getAccountBalanceLocation(from, id)
+                let fromAccountBalance := sload(fromAccountBalanceLocation)
+                revertIfBalanceInsufficient(fromAccountBalance, amount)
 
+                sstore(fromAccountBalanceLocation, sub(fromAccountBalance, amount))
+
+                // Increment `to` account balance for `is` by `amount`
+                let toAccountBalanceLocation := getAccountBalanceLocation(to, id)
+                let toAccountBalance := sload(toAccountBalanceLocation)
+
+                sstore(toAccountBalanceLocation, add(toAccountBalance, amount))
+
+                returnUint(41)
             }
             function safeBatchTransferFrom(from, to, ids, amounts, data) {
                 
@@ -200,7 +205,24 @@ object "YULRC1155" {
             /**
              * Storage access functions
              */
-            // function 
+            function getAccountBalanceLocation(account, id) -> balanceLocation {
+                // Balances: mapping uint256 tokenID => (address account => uint256 balance)
+                
+                // Hash `id` and `balancesSlot()`
+                let hashOfIdandBalancesSlot := keccakHashTwoValues(id, balancesSlot())
+
+                // `balanceLocation` = keccak256(`account`, keccak256(`id`, `balancesSlot()`))
+                balanceLocation := keccakHashTwoValues(account, hashOfIdandBalancesSlot)
+            }
+            function getOperatorApprovalLocation(account, operator) -> operatorApprovalLocation {
+                // Approvals: mapping address account => (address operator => bool approved)
+
+                // Hash `operator` and `operatorApprovalsSlot()`
+                let hashOfOperatorAndOperatorApprovalsSlot := keccakHashTwoValues(operator, operatorApprovalsSlot())
+
+                // `operatorApprovalLocation` = keccak256(`account`, keccak256(`operator`, `operatorApprovalsSlot()`))
+                operatorApprovalLocation := keccakHashTwoValues(account, hashOfOperatorAndOperatorApprovalsSlot)
+            }
 
             /**
              * Gating functions
@@ -222,15 +244,24 @@ object "YULRC1155" {
             function revertIfNotBool(value) {
                 let isBool := 0
 
-                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000000) {
+                if eq(value, 0) {
                     isBool := 1
                 }
-                if eq(value, 0x0000000000000000000000000000000000000000000000000000000000000001) {
+                if eq(value, 1) {
                     isBool := 1
                 }
 
                 // Require `value` is a bool
                 if iszero(isBool) {
+                    revert(0, 0)
+                }
+            }
+            // function gte(a, b) -> r {
+            //     r := iszero(lt(a, b))
+            // }
+            function revertIfBalanceInsufficient(accountBalance, amount) {
+                // Require `accountBalance` >= `amount`
+                if iszero(gt(accountBalance, amount)) {
                     revert(0, 0)
                 }
             }
@@ -246,7 +277,7 @@ object "YULRC1155" {
                 mstore(freeMemoryPointer, valueOne)
                 mstore(add(freeMemoryPointer, 0x20), valueTwo)
 
-                // Increment `freeMemoryPointer` by two words ?
+                // Increment `freeMemoryPointer` by two words
                 // mstore(0x40, add(freeMemoryPointer, 0x40))
 
                 mstore(0x00, keccak256(freeMemoryPointer, 0x40))
