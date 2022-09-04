@@ -36,7 +36,6 @@ object "YULRC1155" {
             }
             // balanceOfBatch(address[],uint256[])
             case 0x4e1273f4 {
-                // returnUintArray(decodeAsArray(1))
                 returnUintArray(balanceOfBatch(decodeAsAddressArray(0), decodeAsUintArray(1)))
             }
             // setApprovalForAll(address,bool)
@@ -72,34 +71,45 @@ object "YULRC1155" {
                 mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2))
                 returnUint(43)
             }
-            // returnArray(uint256[])
+            // TESTING - returnArray(uint256[])
             case 0x3e8bb4b7 {
-                let bitOffsetOfArrayPosition := add(4, mul(0, 0x20))
+                // Get length of array from calldata
+                let offset := 0
+                let bitOffsetOfArrayPosition := add(4, mul(offset, 0x20))
                 let bitOffsetOfArray := calldataload(bitOffsetOfArrayPosition)
-                let byteOffsetOfArray := div(bitOffsetOfArray, 0x20)
-                
                 let arrayLengthPosition := add(4, bitOffsetOfArray)
                 let arrayLength := calldataload(arrayLengthPosition)
 
-                mstore(0x00, 0x20) // offset
-                mstore(0x20, arrayLength) // array length
+                // Load free memory pointer
+                let freeMemoryPointer := mload(0x40)
+                let arrayOffsetInResponse := freeMemoryPointer
 
+                // Store array offset in response (0x20)
+                mstore(freeMemoryPointer, 0x20)
+                incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
+
+                // Store array length
+                freeMemoryPointer := mload(0x40)
+                mstore(freeMemoryPointer, arrayLength)
+                incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
+
+                // For each item in array
                 for { let i := 1 } lt(i, add(arrayLength, 1)) { i := add(i, 1) }
                 {
-                    let position := add(arrayLengthPosition, mul(i, 0x20))
-                    let value := calldataload(position)
+                    freeMemoryPointer := mload(0x40)
 
-                    mstore(mul(add(i, 1), 0x20), value)
+                    // let position := add(arrayLengthPosition, mul(i, 0x20))
+                    // let value := calldataload(position)
+
+                    mstore(freeMemoryPointer, 0x2a) // store 42
+
+                    incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
                 }
 
-                return(0x00, mul(add(arrayLength, 2), 0x20))
+                return(arrayOffsetInResponse, add(arrayOffsetInResponse, mul(add(arrayLength, 2), 0x20)))
             }
             default {
                 revert(0, 0)
-            }
-
-            function returnArray(offset) {
-                returnUintArray(decodeAsArray(0))
             }
 
             /**
@@ -121,7 +131,7 @@ object "YULRC1155" {
 
                 mstore(balancesArrayOffsetPosition, 0x20)
                 // Increment `freeMemoryPointer`
-                mstore(0x40, add(freeMemoryPointer, 0x20))
+                incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
 
                 let balancesArrayLengthPosition := freeMemoryPointer
 
@@ -146,7 +156,7 @@ object "YULRC1155" {
                     mstore(freeMemoryPointer, accountBalance)
 
                     // Increment `freeMemoryPointer`
-                    mstore(0x40, add(freeMemoryPointer, 0x20))
+                    incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
                 }
 
                 arrayOffsetPosition := balancesArrayOffsetPosition
@@ -190,7 +200,9 @@ object "YULRC1155" {
             }
 
             // function mintBatch(to, ids, amounts) {}
+
             // function burn(from, id, amount) {}
+
             // function burnBatch(from, ids, amounts) {}
 
             /**
@@ -233,7 +245,7 @@ object "YULRC1155" {
                 mstore(arrayLengthPosition, arrayLength)
 
                 // Increment `freeMemoryPointer`
-                mstore(0x40, add(freeMemoryPointer, 0x20))
+                incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
 
                 for { let i := 1 } lt(i, add(arrayLength, 1)) { i := add(i, 1) }
                 {
@@ -246,7 +258,7 @@ object "YULRC1155" {
 
                     mstore(freeMemoryPointer, wordAtCalldataPosition)
 
-                    mstore(0x40, add(freeMemoryPointer, 0x20))
+                    incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
                 }
 
                 value := arrayLengthPosition
@@ -361,7 +373,7 @@ object "YULRC1155" {
                     revert(0, 0)
                 }
             }
-            
+
             function revertIfNotEqual(valueOne, valueTwo) {
                 if iszero(eq(valueOne, valueTwo)) {
                     revert(0, 0)
@@ -371,6 +383,10 @@ object "YULRC1155" {
             /**
              * Utility functions
              */
+            function incrementFreeMemoryPointer(currentValue, incrementBy) {
+                mstore(0x40, add(currentValue, incrementBy))
+            }
+
             function keccakHashTwoValues(valueOne, valueTwo) -> keccakHash {
                 // Load `freeMemoryPointer`
                 let freeMemoryPointer := mload(0x40)
