@@ -14,6 +14,9 @@ object "YULRC1155" {
     object "runtime" {
 
         code {
+            // Initialize free memory pointer to 0x80
+            mstore(0x40, 0x80)
+
             /**
              * Storage slots
              */
