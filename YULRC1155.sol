@@ -82,7 +82,7 @@ object "YULRC1155" {
 
                 // Load free memory pointer
                 let freeMemoryPointer := mload(0x40)
-                let arrayOffsetInResponse := freeMemoryPointer
+                let arrayOffsetPointer := freeMemoryPointer
 
                 // Store array offset in response (0x20)
                 mstore(freeMemoryPointer, 0x20)
@@ -106,7 +106,7 @@ object "YULRC1155" {
                     incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
                 }
 
-                return(arrayOffsetInResponse, add(arrayOffsetInResponse, mul(add(arrayLength, 2), 0x20)))
+                return(arrayOffsetPointer, add(arrayOffsetPointer, mul(add(arrayLength, 2), 0x20)))
             }
             default {
                 revert(0, 0)
@@ -163,11 +163,13 @@ object "YULRC1155" {
             }
 
             function setApprovalForAll(operator, approved) {
-                // isApproved := approved
+                let operatorApprovalLocation := getOperatorApprovalLocation(caller(), operator)
+                sstore(operatorApprovalLocation, approved)
             }
 
             function isApprovedForAll(account, operator) -> isApproved {
-                isApproved := 1
+                let operatorApprovalLocation := getOperatorApprovalLocation(account, operator)
+                isApproved := sload(operatorApprovalLocation)
             }
 
             function safeTransferFrom(from, to, id, amount, data) {
@@ -192,6 +194,7 @@ object "YULRC1155" {
             }
 
             // function setURI(newuri) {}
+            
             function mint(to, id, amount) {
                 let balanceLocation := getAccountBalanceLocation(to, id)
                 let accountBalance := sload(balanceLocation)
