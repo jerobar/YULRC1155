@@ -98,10 +98,10 @@ object "YULRC1155" {
                 {
                     freeMemoryPointer := mload(0x40)
 
-                    // let position := add(arrayLengthPosition, mul(i, 0x20))
-                    // let value := calldataload(position)
+                    let position := add(arrayLengthPosition, mul(i, 0x20))
+                    let value := calldataload(position)
 
-                    mstore(freeMemoryPointer, 0x2a) // store 42
+                    mstore(freeMemoryPointer, value)
 
                     incrementFreeMemoryPointer(freeMemoryPointer, 0x20)
                 }
