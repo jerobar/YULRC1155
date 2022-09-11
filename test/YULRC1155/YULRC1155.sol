@@ -21,8 +21,8 @@ object "YULRC1155" {
     object "runtime" {
 
         code {
-            // Initialize free memory pointer to 0x80
-            mstore(0x40, 0x80)
+            // Initialize free memory pointer to 0x20
+            mstore(0x00, 0x20)
 
             /**
              * Storage slots
@@ -115,7 +115,7 @@ object "YULRC1155" {
                 revertIfNotEqual(accountsArrayLength, idsArrayLength)
 
                 // Store length of balances array to return at free memory pointer
-                let mFreeMemoryPointer := mload(0x40)
+                let mFreeMemoryPointer := mload(0x00)
                 let mBalancesArrayLengthPosition_ := mFreeMemoryPointer
                 mstore(mBalancesArrayLengthPosition_, accountsArrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
@@ -123,7 +123,7 @@ object "YULRC1155" {
                 // For each account, load its token id balance into balances array
                 for { let i := 1 } lt(i, add(accountsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    mFreeMemoryPointer := mload(0x40)
+                    mFreeMemoryPointer := mload(0x00)
 
                     // Get account and id at this index position
                     let account := mload(add(mAccountsArrayLengthPointer, mul(i, 0x20)))
@@ -303,7 +303,7 @@ object "YULRC1155" {
                 // keccak256("TransferBatch(address,address,address,uint256[],uint256[])")
                 let signatureHash := 0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb
 
-                let mFreeMemoryPointer := mload(0x40)
+                let mFreeMemoryPointer := mload(0x00)
                 let mIdsArrayOffsetPointer := mFreeMemoryPointer
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
@@ -313,19 +313,20 @@ object "YULRC1155" {
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 
                 // Store bit offset of amounts array
-                mFreeMemoryPointer := mload(0x40)
-                mstore(mFreeMemoryPointer, add(0x40, add(mul(idsArrayLength, 0x20), 0x20))) 
+                mFreeMemoryPointer := mload(0x00)
+                let amountsArrayBitOffset := add(mul(idsArrayLength, 0x20), 0x60)
+                mstore(mFreeMemoryPointer, amountsArrayBitOffset) 
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store id's array length
-                mFreeMemoryPointer := mload(0x40)
+                mFreeMemoryPointer := mload(0x00)
                 mstore(mFreeMemoryPointer, idsArrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store copy of id's array items
                 for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    mFreeMemoryPointer := mload(0x40)
+                    mFreeMemoryPointer := mload(0x00)
 
                     let value := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     mstore(mFreeMemoryPointer, value)
@@ -334,14 +335,14 @@ object "YULRC1155" {
                 }
 
                 // Store amounts array length
-                mFreeMemoryPointer := mload(0x40)
+                mFreeMemoryPointer := mload(0x00)
                 mstore(mFreeMemoryPointer, amountsArrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store copy of amounts array items
                 for { let i := 1 } lt(i, add(amountsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    mFreeMemoryPointer := mload(0x40)
+                    mFreeMemoryPointer := mload(0x00)
 
                     let value := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
                     mstore(mFreeMemoryPointer, value)
@@ -351,9 +352,9 @@ object "YULRC1155" {
 
                 log4(
                     mIdsArrayOffsetPointer, 
-                    add(mAmountsArrayLengthPointer, add(mul(amountsArrayLength, 0x20), 0x60)), 
+                    add(add(amountsArrayBitOffset, 0x20), mul(amountsArrayLength, 0x20)), 
                     signatureHash, 
-                    operator, 
+                    operator,
                     from, 
                     to
                 )
@@ -407,10 +408,10 @@ object "YULRC1155" {
                 let arrayLength := calldataload(cdArrayLengthPosition)
 
                 // Load free memory pointer
-                let mFreeMemoryPointer := mload(0x40)
+                let mFreeMemoryPointer := mload(0x00)
 
                 // Store array length
-                mFreeMemoryPointer := mload(0x40)
+                mFreeMemoryPointer := mload(0x00)
                 let mArrayLengthPointer_ := mFreeMemoryPointer
                 mstore(mArrayLengthPointer_, arrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
@@ -418,7 +419,7 @@ object "YULRC1155" {
                 // Load each array item into free memory
                 for { let i := 1 } lt(i, add(arrayLength, 1)) { i := add(i, 1) }
                 {
-                    mFreeMemoryPointer := mload(0x40)
+                    mFreeMemoryPointer := mload(0x00)
 
                     let cdPosition := add(cdArrayLengthPosition, mul(i, 0x20))
                     let cdValue := calldataload(cdPosition)
@@ -614,22 +615,23 @@ object "YULRC1155" {
              * Utility functions
              */
             function incrementFreeMemoryPointer(currentValue, incrementBy) {
-                mstore(0x40, add(currentValue, incrementBy))
+                mstore(0x00, add(currentValue, incrementBy))
             }
 
             function keccakHashTwoValues(valueOne, valueTwo) -> keccakHash {
-                let mFreeMemoryPointer := mload(0x40)
+                let mFreeMemoryPointer := mload(0x00)
 
                 // Store words `valueOne` and `valueTwo` starting at `mFreeMemoryPointer`
                 mstore(mFreeMemoryPointer, valueOne)
                 mstore(add(mFreeMemoryPointer, 0x20), valueTwo)
 
-                mstore(0x00, keccak256(mFreeMemoryPointer, 0x40))
+                let keccakHash_ := keccak256(mFreeMemoryPointer, 0x40)
+                mstore(mFreeMemoryPointer, keccakHash_)
 
                 // Increment `mFreeMemoryPointer` by two words
                 // mstore(0x40, add(mFreeMemoryPointer, 0x40))
 
-                keccakHash := mload(0x00)
+                keccakHash := mload(mFreeMemoryPointer)
             }
         }
     }

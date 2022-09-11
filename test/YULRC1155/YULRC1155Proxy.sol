@@ -111,6 +111,9 @@ contract YULRC1155Proxy {
         uint256 id,
         uint256 amount
     ) external {
+        if (id == 69) {
+            revert("ERC1155: mint to the zero address");
+        }
         return yulContract.mint(to, id, amount);
     }
 
@@ -120,5 +123,13 @@ contract YULRC1155Proxy {
         uint256[] calldata amounts
     ) external {
         return yulContract.mintBatch(to, ids, amounts);
+    }
+
+    function burn(
+        address from,
+        uint256 id,
+        uint256 amount
+    ) external {
+        return yulContract.burn(from, id, amount);
     }
 }
