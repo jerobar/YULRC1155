@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.16;
+pragma solidity 0.8.9;
 
 interface IYULRC1155 {
     function balanceOf(address, uint256) external returns (uint256);

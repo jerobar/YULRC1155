@@ -156,7 +156,7 @@ object "YULRC1155" {
             }
 
             function safeTransferFrom(from, to, id, amount, data) {
-                transfer(from, to, id, amount)
+                _transfer(from, to, id, amount)
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
             }
@@ -179,7 +179,7 @@ object "YULRC1155" {
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     let amount := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
 
-                    transfer(fromAccount, toAccount, id, amount)
+                    _transfer(fromAccount, toAccount, id, amount)
                 }
 
                 emitTransferBatchEvent(
@@ -194,12 +194,20 @@ object "YULRC1155" {
             // function getURI() {}
             
             // function setURI(newuri) {}
-            
-            function mint(to, id, amount) {
+
+            function _mint(to, id, amount) {
                 let sAccountBalanceKey := getAccountBalanceKey(to, id)
                 let accountBalance := sload(sAccountBalanceKey)
 
                 sstore(sAccountBalanceKey, add(accountBalance, amount))
+            }
+            
+            function mint(to, id, amount) {
+                revertIfZeroAddress(to)
+
+                _mint(to, id, amount)
+
+                emitTransferSingleEvent(caller(), 0x00, to, id, amount)
             }
 
             function mintBatch(
@@ -207,6 +215,8 @@ object "YULRC1155" {
                 mIdsArrayLengthPointer, 
                 mAmountsArrayLengthPointer
             ) {
+                revertIfZeroAddress(toAccount)
+
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
 
@@ -218,17 +228,33 @@ object "YULRC1155" {
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     let amount := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
 
-                    mint(toAccount, id, amount)
+                    _mint(toAccount, id, amount)
                 }
+
+                emitTransferBatchEvent(
+                    caller(), 
+                    0x00, 
+                    toAccount, 
+                    mIdsArrayLengthPointer, 
+                    mAmountsArrayLengthPointer
+                )
             }
 
-            function burn(from, id, amount) {
+            function _burn(from, id, amount) {
+                revertIfZeroAddress(from)
+
                 let sAccountBalanceKey := getAccountBalanceKey(from, id)
                 let accountBalance := sload(sAccountBalanceKey)
 
                 revertIfBalanceInsufficient(accountBalance, amount)
 
                 sstore(sAccountBalanceKey, sub(accountBalance, amount))
+            }
+
+            function burn(from, id, amount) {
+                _burn(from, id, amount)
+
+                emitTransferSingleEvent(caller(), from, 0x00, id, amount)
             }
 
             function burnBatch(from, mIdsArrayLengthPointer, mAmountsArrayLengthPointer) {
@@ -243,8 +269,16 @@ object "YULRC1155" {
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     let amount := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
 
-                    burn(from, id, amount)
+                    _burn(from, id, amount)
                 }
+
+                emitTransferBatchEvent(
+                    caller(), 
+                    from, 
+                    0x00, 
+                    mIdsArrayLengthPointer,
+                    mAmountsArrayLengthPointer 
+                )
             }
 
             /**
@@ -279,36 +313,50 @@ object "YULRC1155" {
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 
                 // Store bit offset of amounts array
-                mstore(mFreeMemoryPointer, add(0x40, mul(idsArrayLength, 0x20))) 
+                mFreeMemoryPointer := mload(0x40)
+                mstore(mFreeMemoryPointer, add(0x40, add(mul(idsArrayLength, 0x20), 0x20))) 
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store id's array length
+                mFreeMemoryPointer := mload(0x40)
                 mstore(mFreeMemoryPointer, idsArrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store copy of id's array items
                 for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    let value := mload(add(mIdsArrayLengthPointer, i))
+                    mFreeMemoryPointer := mload(0x40)
+
+                    let value := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     mstore(mFreeMemoryPointer, value)
 
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 }
 
                 // Store amounts array length
+                mFreeMemoryPointer := mload(0x40)
                 mstore(mFreeMemoryPointer, amountsArrayLength)
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store copy of amounts array items
                 for { let i := 1 } lt(i, add(amountsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    let value := mload(add(mAmountsArrayLengthPointer, i))
+                    mFreeMemoryPointer := mload(0x40)
+
+                    let value := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
                     mstore(mFreeMemoryPointer, value)
 
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 }
 
-                log4(mIdsArrayOffsetPointer, sub(mFreeMemoryPointer, mIdsArrayOffsetPointer), signatureHash, operator, from, to)
+                log4(
+                    mIdsArrayOffsetPointer, 
+                    add(mAmountsArrayLengthPointer, add(mul(amountsArrayLength, 0x20), 0x60)), 
+                    signatureHash, 
+                    operator, 
+                    from, 
+                    to
+                )
             }
 
             function emitApprovalForAllEvent(owner, operator, approved) {
@@ -457,7 +505,7 @@ object "YULRC1155" {
                 sOperatorApprovalKey := keccakHashTwoValues(operator, hashOfAccountAndOperatorApprovalsSlot)
             }
 
-            function transfer(from, to, id, amount) {
+            function _transfer(from, to, id, amount) {
                 // Decrement `from` account balance for `id` by `amount`
                 let sFromAccountBalanceKey := getAccountBalanceKey(from, id)
                 let fromAccountBalance := sload(sFromAccountBalanceKey)
@@ -501,8 +549,15 @@ object "YULRC1155" {
             }
 
             function revertIfNotValidAddress(value) {
-                // Require `value` is valid address (and not the zero address)
+                // Require `value` is valid address
                 if iszero(iszero(and(value, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
+                    revert(0, 0)
+                }
+            }
+
+            function revertIfZeroAddress(value) {
+                // Revert if `value` is zero address
+                if iszero(value) {
                     revert(0, 0)
                 }
             }
@@ -524,8 +579,18 @@ object "YULRC1155" {
             }
 
             function revertIfBalanceInsufficient(accountBalance, amount) {
+                let gte := 0
+
+                if eq(accountBalance, amount) {
+                    gte := 1
+                }
+
+                if gt(accountBalance, amount) {
+                    gte := 1
+                }
+                
                 // Require `accountBalance` >= `amount`
-                if iszero(gt(accountBalance, amount)) {
+                if iszero(gte) {
                     revert(0, 0)
                 }
             }
