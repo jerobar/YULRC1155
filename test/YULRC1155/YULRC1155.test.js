@@ -6,6 +6,7 @@
  * - ERC1155MetadataURI functionality
  * -
  */
+const path = require('path')
 const fs = require('fs')
 const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers')
 const { expect } = require('chai')
@@ -16,11 +17,11 @@ describe('YULRC1155', function () {
       await ethers.getSigners()
 
     const yulrc1155Abi = fs.readFileSync(
-      `/home/jerobar/Projects/yulrc1155/test/YULRC1155/YULRC1155.abi.json`,
+      path.resolve(__dirname, 'YULRC1155.abi.json'),
       'utf8'
     )
     const yulrc1155Bytecode = fs.readFileSync(
-      `/home/jerobar/Projects/yulrc1155/test/YULRC1155/YULRC1155.bytecode.json`,
+      path.resolve(__dirname, 'YULRC1155.bytecode.json'),
       'utf8'
     )
     const YULRC1155 = await ethers.getContractFactory(

@@ -21,7 +21,7 @@ object "YULRC1155" {
     object "runtime" {
 
         code {
-            // Initialize free memory pointer to 0x20
+            // Initialize a free memory pointer at 0x00
             mstore(0x00, 0x20)
 
             /**
@@ -155,6 +155,30 @@ object "YULRC1155" {
                 isApproved := sload(sOperatorApprovalKey)
             }
 
+            function _transfer(from, to, id, amount) {
+                // Decrement `from` account balance for `id` by `amount`
+                let sFromAccountBalanceKey := getAccountBalanceKey(from, id)
+                let fromAccountBalance := sload(sFromAccountBalanceKey)
+
+                revertIfOperatorNotApproved(from, caller())
+                revertIfBalanceInsufficient(fromAccountBalance, amount)
+
+                sstore(sFromAccountBalanceKey, sub(fromAccountBalance, amount))
+
+                // Increment `to` account balance for `is` by `amount`
+                let sToAccountBalanceKey := getAccountBalanceKey(to, id)
+                let toAccountBalance := sload(sToAccountBalanceKey)
+
+                sstore(sToAccountBalanceKey, add(toAccountBalance, amount))
+
+                // If `to` address is a contract
+                let toSize := extcodesize(to)
+                if gt(toSize, 0) {
+                    // Call `onERC1155Received` on `to` with `data`
+
+                }
+            }
+
             function safeTransferFrom(from, to, id, amount, data) {
                 _transfer(from, to, id, amount)
 
@@ -196,6 +220,8 @@ object "YULRC1155" {
             // function setURI(newuri) {}
 
             function _mint(to, id, amount) {
+                revertIfZeroAddress(to)
+
                 let sAccountBalanceKey := getAccountBalanceKey(to, id)
                 let accountBalance := sload(sAccountBalanceKey)
 
@@ -203,8 +229,6 @@ object "YULRC1155" {
             }
             
             function mint(to, id, amount) {
-                revertIfZeroAddress(to)
-
                 _mint(to, id, amount)
 
                 emitTransferSingleEvent(caller(), 0x00, to, id, amount)
@@ -215,8 +239,6 @@ object "YULRC1155" {
                 mIdsArrayLengthPointer, 
                 mAmountsArrayLengthPointer
             ) {
-                revertIfZeroAddress(toAccount)
-
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
 
@@ -309,7 +331,7 @@ object "YULRC1155" {
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
                 
                 // Store bit offset of id's array
-                mstore(mFreeMemoryPointer, 0x40) 
+                mstore(mIdsArrayOffsetPointer, 0x40) 
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 
                 // Store bit offset of amounts array
@@ -506,29 +528,6 @@ object "YULRC1155" {
                 sOperatorApprovalKey := keccakHashTwoValues(operator, hashOfAccountAndOperatorApprovalsSlot)
             }
 
-            function _transfer(from, to, id, amount) {
-                // Decrement `from` account balance for `id` by `amount`
-                let sFromAccountBalanceKey := getAccountBalanceKey(from, id)
-                let fromAccountBalance := sload(sFromAccountBalanceKey)
-
-                revertIfOperatorNotApproved(from, caller())
-                revertIfBalanceInsufficient(fromAccountBalance, amount)
-
-                sstore(sFromAccountBalanceKey, sub(fromAccountBalance, amount))
-
-                // Increment `to` account balance for `is` by `amount`
-                let sToAccountBalanceKey := getAccountBalanceKey(to, id)
-                let toAccountBalance := sload(sToAccountBalanceKey)
-
-                sstore(sToAccountBalanceKey, add(toAccountBalance, amount))
-
-                // If `to` address is a contract
-                let toSize := extcodesize(to)
-                if gt(toSize, 0) {
-                    // Call `onERC1155Received` on `to` with `data`
-
-                }
-            }
 
             /**
              * Gating functions
@@ -627,9 +626,6 @@ object "YULRC1155" {
 
                 let keccakHash_ := keccak256(mFreeMemoryPointer, 0x40)
                 mstore(mFreeMemoryPointer, keccakHash_)
-
-                // Increment `mFreeMemoryPointer` by two words
-                // mstore(0x40, add(mFreeMemoryPointer, 0x40))
 
                 keccakHash := mload(mFreeMemoryPointer)
             }
