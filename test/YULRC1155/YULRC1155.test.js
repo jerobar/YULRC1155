@@ -8,7 +8,11 @@
  */
 const path = require('path')
 const fs = require('fs')
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers')
+// const { helpers } = require('@nomicfoundation/hardhat-network-helpers')
+const {
+  loadFixture,
+  getStorageAt
+} = require('@nomicfoundation/hardhat-network-helpers')
 const { expect } = require('chai')
 
 describe('YULRC1155', function () {
@@ -28,7 +32,7 @@ describe('YULRC1155', function () {
       JSON.parse(yulrc1155Abi),
       JSON.parse(yulrc1155Bytecode).object
     )
-    const yulrc1155Contract = await YULRC1155.deploy()
+    const yulrc1155Contract = await YULRC1155.deploy('foobar')
 
     return { operator, tokenHolder, tokenBatchHolder, yulrc1155Contract }
   }

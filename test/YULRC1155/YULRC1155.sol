@@ -6,12 +6,31 @@
  * Note that the approach below prioritizes readability over efficiency and 
  * adopts a convention of prefixing calldata-related variables with `cd`, 
  * storage with `s` and memory with `m`.
+ * 
+ * @todos
+ * 
+ * - implement calldatacopy for decodeAsArray
+ * - decodeAsBytes functionality, adding data arg to relevant functions
+ * - call erc1155 receivers with data
+ * - uri event
+ * - 
  */
 object "YULRC1155" {
 
+    /**
+     * Constructor
+     * 
+     * Stores the caller as contract owner, stores the uri string passed in 
+     * constructor and deploys the contract.
+     */
     code {
-        // Store the contract owner in slot zero
+        // Store the contract owner in slot 0
         sstore(0, caller())
+
+        // Dev: hardcode storage for uri 'https://token-cdn-domain/{id}.json'
+        sstore(3, 0x22)
+        sstore(4, 0x68747470733a2f2f746f6b656e2d63646e2d646f6d61696e2f7b69647d2e6a73)
+        sstore(5, 0x6f6e000000000000000000000000000000000000000000000000000000000000)
 
         // Deploy the contract
         datacopy(0, dataoffset("runtime"), datasize("runtime"))
@@ -35,6 +54,9 @@ object "YULRC1155" {
 
             // 2: mapping address account => (address operator => bool approved)
             function operatorApprovalsSlot() -> slot { slot := 2 }
+
+            // 3: uint256 uri length
+            function uriLengthSlot() -> slot { slot := 3 }
 
             /**
              * Dispatcher
@@ -78,6 +100,10 @@ object "YULRC1155" {
                     decodeAsUintArray(3), 
                     0 // decodeAsBytes(4)
                 )
+            }
+            // uri(uint256)
+            case 0x0e89341c {
+                uri(0)
             }
             // mint(address,uint256,uint256)
             case 0x156e29f6 {
@@ -215,9 +241,26 @@ object "YULRC1155" {
                 )
             }
 
-            // function getURI() {}
-            
-            // function setURI(newuri) {}
+            function uri(id) {
+                let uriLength := sload(uriLengthSlot())
+
+                // Store uri offset within response
+                mstore(0x00, 0x20)
+                // Store uri length
+                mstore(0x20, uriLength)
+
+                // // Store uri data
+                for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
+                {
+                    let dataSlot := add(uriLengthSlot(), i)
+                    let uriData := sload(dataSlot)
+
+                    mstore(add(0x20, mul(i, 0x20)), uriData)
+                }
+
+                // Return uri string offset, length, and data
+                return(0x00, add(0x40, mul(uriLength, 0x20)))
+            }
 
             function _mint(to, id, amount) {
                 revertIfZeroAddress(to)
@@ -330,14 +373,14 @@ object "YULRC1155" {
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
                 
-                // Store bit offset of id's array
+                // Store offset of id's array
                 mstore(mIdsArrayOffsetPointer, 0x40) 
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                 
-                // Store bit offset of amounts array
+                // Store offset of amounts array
                 mFreeMemoryPointer := mload(0x00)
-                let amountsArrayBitOffset := add(mul(idsArrayLength, 0x20), 0x60)
-                mstore(mFreeMemoryPointer, amountsArrayBitOffset) 
+                let amountsArrayOffset := add(mul(idsArrayLength, 0x20), 0x60)
+                mstore(mFreeMemoryPointer, amountsArrayOffset) 
                 incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
                 // Store id's array length
@@ -374,7 +417,7 @@ object "YULRC1155" {
 
                 log4(
                     mIdsArrayOffsetPointer, 
-                    add(add(amountsArrayBitOffset, 0x20), mul(amountsArrayLength, 0x20)), 
+                    add(add(amountsArrayOffset, 0x20), mul(amountsArrayLength, 0x20)), 
                     signatureHash, 
                     operator,
                     from, 
@@ -424,9 +467,9 @@ object "YULRC1155" {
 
             function decodeAsArray(cdOffset, isAddressArray) -> mArrayLengthPointer {
                 // Get position and length of array from calldata
-                let cdBitOffsetOfArrayPosition := add(4, mul(cdOffset, 0x20))
-                let cdBitOffsetOfArray := calldataload(cdBitOffsetOfArrayPosition)
-                let cdArrayLengthPosition := add(4, cdBitOffsetOfArray)
+                let cdOffsetOfArrayPosition := add(4, mul(cdOffset, 0x20))
+                let cdOffsetOfArray := calldataload(cdOffsetOfArrayPosition)
+                let cdArrayLengthPosition := add(4, cdOffsetOfArray)
                 let arrayLength := calldataload(cdArrayLengthPosition)
 
                 // Load free memory pointer
@@ -496,13 +539,13 @@ object "YULRC1155" {
             }
 
             function returnArray(mArrayLengthPointer) {
-                let mArrayBitOffsetPointer := sub(mArrayLengthPointer, 0x20)
-                // Bit offset of array in response
-                mstore(mArrayBitOffsetPointer, 0x20)
+                let mArrayOffsetPointer := sub(mArrayLengthPointer, 0x20)
+                // Offset of array in response
+                mstore(mArrayOffsetPointer, 0x20)
                 let arrayLength := mload(mArrayLengthPointer)
 
-                // Return memory from array bit offset to the last item
-                return(mArrayBitOffsetPointer, add(mArrayBitOffsetPointer, mul(add(arrayLength, 2), 0x20)))
+                // Return memory from array offset to the last item
+                return(mArrayOffsetPointer, add(mArrayOffsetPointer, mul(add(arrayLength, 2), 0x20)))
             }
 
             /**
