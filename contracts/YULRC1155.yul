@@ -231,36 +231,62 @@ object "YULRC1155" {
 
             function safeTransferFrom(from, to, id, amount, data) {
                 _transfer(from, to, id, amount)
+                
+                if addressIsContract(to) {
+                    let mFreeMemoryPointer := mload(0x00)
+                    let mInputPointer := mFreeMemoryPointer
+                    let onERC1155ReceivedSelector := 0xf23a6e61
 
-                /**
-                 * - Load fn signature string into memory
-                 * - Calculate selector from signature
-                 *   - Actually just precompute this... 
-                 * https://ethereum.stackexchange.com/questions/124636/set-data-for-call-delegatecall-etc-in-yul-inline-assembly
-                 */
+                    // function selector
+                    mstore(mFreeMemoryPointer, onERC1155ReceivedSelector)
+                    incrementFreeMemoryPointer(mInputPointer, 0x04)
 
-                // If `to` address is a contract
-                // utility function addressIsContract() {} 
-                // let toSize := extcodesize(to)
-                // if gt(toSize, 0) {
-                //     // Call `onERC1155Received` on `to` with `data`
-                //     // onERC1155Received(address,address,uint256,uint256,bytes)
-                //     // 0xf23a6e612e1ff4830e658fe43f4e3cb4a5f8170bd5d9e69fb5d7a7fa9e4fdf97
-                //     // let onERC1155ReceivedSelector := 0xf23a6e61
-                // load fn selector into free memory
-                // selector := shr(0xE0, keccak256(mFrom, mTo))
-                //     // let success := call(
-                //     //     gas(), // gas
-                //     //     to, // contract at address `to`
-                //     //     0, // wei to send
-                //     //     0x00, // input mem start
-                //     //     0x80, // input mem to
-                //     //     0x00, // output mem start
-                //     //     0x80 // output mem to
-                //     // )
-                // 
-                // handle revert case here
-                // }
+                    // bytes data offset
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, 0xA0)
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                    // address operator
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, caller())
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                    // address from
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, from)
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                    // uint256 id
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, id)
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                    // uint256 value
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, amount)
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                    // bytes data length
+                    mFreeMemoryPointer := mload(0x00)
+                    mstore(mFreeMemoryPointer, 0x00)
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                    mFreeMemoryPointer := mload(0x00)
+
+                    // Call `onERC1155Received` on `to`
+                    let success := call(
+                        gas(), // gas
+                        to, // contract address
+                        0, // wei to include
+                        mInputPointer, // input start
+                        mFreeMemoryPointer, // input end
+                        mFreeMemoryPointer, // output start
+                        0x20 // output end
+                    )
+
+                    if iszero(success) {
+                        revert(0, 0)
+                    }
+                }
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
             }
@@ -728,6 +754,10 @@ object "YULRC1155" {
                 mstore(mFreeMemoryPointer, keccakHash_)
 
                 keccakHash := mload(mFreeMemoryPointer)
+            }
+
+            function addressIsContract(address_) -> isContract {
+                isContract := extcodesize(address_)
             }
         }
     }

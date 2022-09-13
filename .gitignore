@@ -9,3 +9,4 @@ typechain-types
 cache
 artifacts
 
+contracts/YULRC1155.bytecode.json
