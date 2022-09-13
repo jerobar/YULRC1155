@@ -23,6 +23,7 @@
     "hardhat": "^2.11.1"
   },
   "dependencies": {
-    "@openzeppelin/test-helpers": "^0.5.16"
+    "@openzeppelin/test-helpers": "^0.5.16",
+    "solc": "^0.8.17"
   }
 }

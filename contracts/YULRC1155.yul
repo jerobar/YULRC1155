@@ -9,10 +9,10 @@
  * 
  * @todos
  * 
- * - implement calldatacopy for decodeAsArray
- * - decodeAsBytes functionality, adding data arg to relevant functions
+ * - calldatasize/calldatacopy approach for decodeAsArray
+ * - implement decodeAsBytes functionality
  * - call erc1155 receivers with data
- * - uri event
+ * - uri event code ? even though it's not being used ? 
  * - 
  */
 object "YULRC1155" {
@@ -65,6 +65,10 @@ object "YULRC1155" {
              * selector (the first 4 bytes of keccak256(functionSignature)).
              */
             switch functionSelector()
+            // uri(uint256)
+            case 0x0e89341c {
+                uri(0) // Token id isn't actually used
+            }
             // balanceOf(address,uint256)
             case 0x00fdd58e {
                 returnUint(balanceOf(decodeAsAddress(0), decodeAsUint(1)))
@@ -88,7 +92,7 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUint(2), 
                     decodeAsUint(3), 
-                    0 // decodeAsBytes(4)
+                    decodeAsBytes(4)
                 )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
@@ -98,20 +102,16 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUintArray(2), 
                     decodeAsUintArray(3), 
-                    0 // decodeAsBytes(4)
+                    decodeAsBytes(4)
                 )
             }
-            // uri(uint256)
-            case 0x0e89341c {
-                uri(0)
+            // mint(address,uint256,uint256,bytes)
+            case 0x731133e9 {
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsBytes(3))
             }
-            // mint(address,uint256,uint256)
-            case 0x156e29f6 {
-                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2))
-            }
-            // mintBatch(address,uint256[],uint256[])
-            case 0xd81d0a15 {
-                mintBatch(decodeAsAddress(0), decodeAsUintArray(1), decodeAsUintArray(2))
+            // mintBatch(address,uint256[],uint256[],bytes)
+            case 0x1f7fdffa {
+                mintBatch(decodeAsAddress(0), decodeAsUintArray(1), decodeAsUintArray(2), decodeAsBytes(3))
             }
             // burn(address,uint256,uint256)
             case 0xf5298aca {
@@ -128,7 +128,30 @@ object "YULRC1155" {
             /**
              * ERC1155 functions
              */
+            function uri(id) {
+                let uriLength := sload(uriLengthSlot())
+
+                // Store uri string offset within response
+                mstore(0x00, 0x20)
+                // Store uri string length
+                mstore(0x20, uriLength)
+
+                // // Store uri string data
+                for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
+                {
+                    let dataSlot := add(uriLengthSlot(), i)
+                    let uriData := sload(dataSlot)
+
+                    mstore(add(0x20, mul(i, 0x20)), uriData)
+                }
+
+                // Return uri string offset, length, and data
+                return(0x00, add(0x40, mul(uriLength, 0x20)))
+            }
+            
             function balanceOf(account, id) -> accountBalance {
+                revertIfZeroAddress(account)
+
                 let sBalanceKey := getAccountBalanceKey(account, id)
 
                 accountBalance := sload(sBalanceKey)
@@ -155,9 +178,8 @@ object "YULRC1155" {
                     let account := mload(add(mAccountsArrayLengthPointer, mul(i, 0x20)))
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
 
-                    // Get account balance from storage
-                    let sAccountBalanceKey := getAccountBalanceKey(account, id)
-                    let accountBalance := sload(sAccountBalanceKey)
+                    // Get account balance
+                    let accountBalance := balanceOf(account, id)
 
                     mstore(mFreeMemoryPointer, accountBalance)
 
@@ -168,6 +190,9 @@ object "YULRC1155" {
             }
 
             function setApprovalForAll(operator, approved) {
+                // Revert if caller trying to approve themselves
+                revertIfEqual(caller(), operator)
+
                 let sOperatorApprovalKey := getOperatorApprovalKey(caller(), operator)
 
                 sstore(sOperatorApprovalKey, approved)
@@ -182,11 +207,17 @@ object "YULRC1155" {
             }
 
             function _transfer(from, to, id, amount) {
+                revertIfZeroAddress(to)
+
+                // If `from` not equal to `caller()`
+                if iszero(eq(from, caller())) {
+                    revertIfOperatorNotApproved(from, caller())
+                }
+
                 // Decrement `from` account balance for `id` by `amount`
                 let sFromAccountBalanceKey := getAccountBalanceKey(from, id)
                 let fromAccountBalance := sload(sFromAccountBalanceKey)
-
-                revertIfOperatorNotApproved(from, caller())
+                
                 revertIfBalanceInsufficient(fromAccountBalance, amount)
 
                 sstore(sFromAccountBalanceKey, sub(fromAccountBalance, amount))
@@ -196,17 +227,40 @@ object "YULRC1155" {
                 let toAccountBalance := sload(sToAccountBalanceKey)
 
                 sstore(sToAccountBalanceKey, add(toAccountBalance, amount))
-
-                // If `to` address is a contract
-                let toSize := extcodesize(to)
-                if gt(toSize, 0) {
-                    // Call `onERC1155Received` on `to` with `data`
-
-                }
             }
 
             function safeTransferFrom(from, to, id, amount, data) {
                 _transfer(from, to, id, amount)
+
+                /**
+                 * - Load fn signature string into memory
+                 * - Calculate selector from signature
+                 *   - Actually just precompute this... 
+                 * https://ethereum.stackexchange.com/questions/124636/set-data-for-call-delegatecall-etc-in-yul-inline-assembly
+                 */
+
+                // If `to` address is a contract
+                // utility function addressIsContract() {} 
+                // let toSize := extcodesize(to)
+                // if gt(toSize, 0) {
+                //     // Call `onERC1155Received` on `to` with `data`
+                //     // onERC1155Received(address,address,uint256,uint256,bytes)
+                //     // 0xf23a6e612e1ff4830e658fe43f4e3cb4a5f8170bd5d9e69fb5d7a7fa9e4fdf97
+                //     // let onERC1155ReceivedSelector := 0xf23a6e61
+                // load fn selector into free memory
+                // selector := shr(0xE0, keccak256(mFrom, mTo))
+                //     // let success := call(
+                //     //     gas(), // gas
+                //     //     to, // contract at address `to`
+                //     //     0, // wei to send
+                //     //     0x00, // input mem start
+                //     //     0x80, // input mem to
+                //     //     0x00, // output mem start
+                //     //     0x80 // output mem to
+                //     // )
+                // 
+                // handle revert case here
+                // }
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
             }
@@ -232,6 +286,22 @@ object "YULRC1155" {
                     _transfer(fromAccount, toAccount, id, amount)
                 }
 
+                // If `to` address is a contract
+                // let toSize := extcodesize(to)
+                // if gt(toSize, 0) {
+                //     // Call `onERC1155BatchReceived` on `to` with `data`
+                //     // onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)
+                //     // let success := call(
+                //     //     gas(), // gas
+                //     //     to, // contract at address `to`
+                //     //     0, // wei to send
+                //     //     0x00, // input mem start
+                //     //     0x80, // input mem to
+                //     //     0x00, // output mem start
+                //     //     0x80 // output mem to
+                //     // )
+                // }
+
                 emitTransferBatchEvent(
                     caller(), 
                     fromAccount, 
@@ -239,27 +309,6 @@ object "YULRC1155" {
                     mIdsArrayLengthPointer,
                     mAmountsArrayLengthPointer 
                 )
-            }
-
-            function uri(id) {
-                let uriLength := sload(uriLengthSlot())
-
-                // Store uri offset within response
-                mstore(0x00, 0x20)
-                // Store uri length
-                mstore(0x20, uriLength)
-
-                // // Store uri data
-                for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
-                {
-                    let dataSlot := add(uriLengthSlot(), i)
-                    let uriData := sload(dataSlot)
-
-                    mstore(add(0x20, mul(i, 0x20)), uriData)
-                }
-
-                // Return uri string offset, length, and data
-                return(0x00, add(0x40, mul(uriLength, 0x20)))
             }
 
             function _mint(to, id, amount) {
@@ -271,7 +320,7 @@ object "YULRC1155" {
                 sstore(sAccountBalanceKey, add(accountBalance, amount))
             }
             
-            function mint(to, id, amount) {
+            function mint(to, id, amount, data) {
                 _mint(to, id, amount)
 
                 emitTransferSingleEvent(caller(), 0x00, to, id, amount)
@@ -280,7 +329,8 @@ object "YULRC1155" {
             function mintBatch(
                 toAccount, 
                 mIdsArrayLengthPointer, 
-                mAmountsArrayLengthPointer
+                mAmountsArrayLengthPointer,
+                data
             ) {
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
@@ -445,9 +495,8 @@ object "YULRC1155" {
              * Calldata decoding functions
              */
             function functionSelector() -> selector {
-                // `div` shifts right by 224 bits leaving the first 4 bytes
-                selector := div(calldataload(0), 0x100000000000000000000000000000000000000000000000000000000)
-                // Note: shr would be preferrable as it costs less gas
+                // Shift right by 224 bits leaving the first 4 bytes
+                selector := shr(0xE0, calldataload(0))
             }
 
             function decodeAsAddress(cdOffset) -> value {
@@ -518,8 +567,10 @@ object "YULRC1155" {
                 value := valueAtPosition
             }
 
-            function decodeAsBytes(cdOffset) {
+            function decodeAsBytes(cdOffset) -> value {
+                value := 0
 
+                // mBytesLengthPointer
             }
 
             /**
@@ -634,6 +685,12 @@ object "YULRC1155" {
                 
                 // Require `accountBalance` >= `amount`
                 if iszero(gte) {
+                    revert(0, 0)
+                }
+            }
+
+            function revertIfEqual(valueOne, valueTwo) {
+                if eq(valueOne, valueTwo) {
                     revert(0, 0)
                 }
             }
