@@ -233,6 +233,7 @@ object "YULRC1155" {
                 _transfer(from, to, id, amount)
                 
                 if addressIsContract(to) {
+                    // Build `onERC1155Received` calldata
                     let mFreeMemoryPointer := mload(0x00)
                     let mInputPointer := mFreeMemoryPointer
                     let onERC1155ReceivedSelector := 0xf23a6e61
@@ -241,38 +242,40 @@ object "YULRC1155" {
                     mstore(mFreeMemoryPointer, onERC1155ReceivedSelector)
                     incrementFreeMemoryPointer(mInputPointer, 0x04)
 
-                    // bytes data offset
+                    // bytes `data` offset
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, 0xA0)
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
-                    // address operator
+                    // address `operator`
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, caller())
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
-                    // address from
+                    // address `from`
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, from)
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
-                    // uint256 id
+                    // uint256 `id`
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, id)
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
-                    // uint256 value
+                    // uint256 `value`
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, amount)
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
 
-                    // bytes data length
+                    // bytes `data` length
                     mFreeMemoryPointer := mload(0x00)
                     mstore(mFreeMemoryPointer, 0x00)
                     incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
                     mFreeMemoryPointer := mload(0x00)
 
-                    // Call `onERC1155Received` on `to`
+                    // bytes `data`
+
+                    // Call `onERC1155Received` on `to` contract
                     let success := call(
                         gas(), // gas
                         to, // contract address
@@ -280,10 +283,16 @@ object "YULRC1155" {
                         mInputPointer, // input start
                         mFreeMemoryPointer, // input end
                         mFreeMemoryPointer, // output start
-                        0x20 // output end
+                        add(mFreeMemoryPointer, 0x04) // output end
                     )
 
                     if iszero(success) {
+                        revert(0, 0)
+                    }
+
+                    let response := mload(mFreeMemoryPointer)
+
+                    if iszero(eq(response, onERC1155ReceivedSelector)) {
                         revert(0, 0)
                     }
                 }
