@@ -295,6 +295,9 @@ object "YULRC1155" {
                     if iszero(eq(response, onERC1155ReceivedSelector)) {
                         revert(0, 0)
                     }
+
+                    // Reset free memory pointer
+                    mstore(0x00, mInputPointer)
                 }
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
@@ -602,10 +605,36 @@ object "YULRC1155" {
                 value := valueAtPosition
             }
 
-            function decodeAsBytes(cdOffset) -> value {
-                value := 0
+            function decodeAsBytes(cdOffset) -> mBytesLengthPointer {
+                // Get position and length of bytes from calldata
+                let cdOffsetOfBytesPosition := add(4, mul(cdOffset, 0x20))
+                let cdOffsetOfBytes := calldataload(cdOffsetOfBytesPosition)
+                let cdBytesLengthPosition := add(4, cdOffsetOfBytes)
+                let bytesLength := calldataload(cdBytesLengthPosition)
 
-                // mBytesLengthPointer
+                // Load free memory pointer
+                let mFreeMemoryPointer := mload(0x00)
+
+                // Store bytes length
+                mFreeMemoryPointer := mload(0x00)
+                let mBytesLengthPointer_ := mFreeMemoryPointer
+                mstore(mBytesLengthPointer_, bytesLength)
+                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+
+                // Load each byte into memory
+                for { let i := 1 } lt(i, add(bytesLength, 1)) { i := add(i, 1) }
+                {
+                    mFreeMemoryPointer := mload(0x00)
+
+                    let cdPosition := add(cdBytesLengthPosition, mul(i, 0x20))
+                    let cdValue := calldataload(cdPosition)
+
+                    mstore(mFreeMemoryPointer, cdValue)
+
+                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                }
+
+                mBytesLengthPointer := mBytesLengthPointer_
             }
 
             /**
