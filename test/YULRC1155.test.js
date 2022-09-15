@@ -364,7 +364,7 @@ describe('YULRC1155', function () {
    * - succeeds when calling onERC1155Received with data
    * - emits a TransferSingle log
    */
-  describe.only('safeTransferFrom', function () {
+  describe('safeTransferFrom', function () {
     const tokenId = 1990
     const mintAmount = 9001
 

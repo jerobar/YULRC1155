@@ -5,14 +5,13 @@
  * 
  * Note that the approach below prioritizes readability over efficiency and 
  * adopts a convention of prefixing calldata-related variables with `cd`, 
- * storage with `s` and memory with `m`.
+ * storage with `s` and memory with `m` where it aids clarity.
  * 
  * @todos
- * 
- * - calldatasize/calldatacopy approach for decodeAsArray
- * - implement decodeAsBytes functionality
- * - call erc1155 receivers with data
+ * - calldatasize/calldatacopy approach for decodeAsBytesArray
  * - uri event code ? even though it's not being used ? 
+ * 
+ * - copyBytesArrayIntoMemory(at, to)
  * - 
  */
 object "YULRC1155" {
@@ -67,7 +66,7 @@ object "YULRC1155" {
             switch functionSelector()
             // uri(uint256)
             case 0x0e89341c {
-                uri(0) // Token id isn't actually used
+                uri(0) // Token id isn't used so don't bother decoding it
             }
             // balanceOf(address,uint256)
             case 0x00fdd58e {
@@ -92,7 +91,7 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUint(2), 
                     decodeAsUint(3), 
-                    decodeAsBytes(4)
+                    decodeAsBytesArray(4)
                 )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
@@ -102,16 +101,16 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUintArray(2), 
                     decodeAsUintArray(3), 
-                    decodeAsBytes(4)
+                    decodeAsBytesArray(4)
                 )
             }
             // mint(address,uint256,uint256,bytes)
             case 0x731133e9 {
-                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsBytes(3))
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsBytesArray(3))
             }
             // mintBatch(address,uint256[],uint256[],bytes)
             case 0x1f7fdffa {
-                mintBatch(decodeAsAddress(0), decodeAsUintArray(1), decodeAsUintArray(2), decodeAsBytes(3))
+                mintBatch(decodeAsAddress(0), decodeAsUintArray(1), decodeAsUintArray(2), decodeAsBytesArray(3))
             }
             // burn(address,uint256,uint256)
             case 0xf5298aca {
@@ -126,6 +125,95 @@ object "YULRC1155" {
             }
 
             /**
+             * Calldata decoding functions
+             */
+            function functionSelector() -> selector {
+                // Shift right by 224 bits leaving the first 4 bytes
+                selector := shr(0xE0, calldataload(0))
+            }
+
+            function decodeAsAddress(cdOffset) -> value {
+                let uintAtOffset := decodeAsUint(cdOffset)
+                revertIfNotValidAddress(uintAtOffset)
+
+                value := uintAtOffset
+            }
+
+            function decodeAsAddressArray(cdOffset) -> value {
+                value := decodeAsBytesArray(cdOffset)
+            }
+
+            function decodeAsUintArray(cdOffset) -> value {
+                value := decodeAsBytesArray(cdOffset)
+            }
+
+            function decodeAsUint(cdOffset) -> value {
+                let cdPosition := add(4, mul(cdOffset, 0x20))
+                revertIfPositionNotInCalldata(cdPosition)
+
+                value := calldataload(cdPosition)
+            }
+
+            function decodeAsBool(cdOffset) -> value {
+                let cdPosition := add(4, mul(cdOffset, 0x20))
+                revertIfPositionNotInCalldata(cdPosition)
+
+                let valueAtPosition := calldataload(cdPosition)
+                revertIfNotBool(valueAtPosition)
+
+                value := valueAtPosition
+            }
+
+            function decodeAsBytesArray(cdOffset) -> mBytesArrayLengthPointer {
+                // Get position and length of bytes from calldata
+                let cdOffsetOfBytesPosition := add(4, mul(cdOffset, 0x20))
+                let cdOffsetOfBytes := calldataload(cdOffsetOfBytesPosition)
+                let cdBytesLengthPosition := add(4, cdOffsetOfBytes)
+                let bytesLength := calldataload(cdBytesLengthPosition)
+
+                // Store bytes length in free memory
+                let mFreeMemoryPointer := mload(0x00)
+                let mBytesArrayLengthPointer_ := mFreeMemoryPointer
+                mstore(mBytesArrayLengthPointer_, bytesLength)
+
+                // Copy bytes data into free memory after length
+                calldatacopy(add(mFreeMemoryPointer, 0x20), add(cdBytesLengthPosition, 0x20), mul(bytesLength, 0x20))
+                
+                // Increment free memory pointer to after bytes array
+                incrementFreeMemoryPointer(mFreeMemoryPointer, add(0x20, mul(bytesLength, 0x20)))
+                
+                mBytesArrayLengthPointer := mBytesArrayLengthPointer_
+            }
+
+            /**
+             * Calldata encoding functions
+             */
+            function returnUint(value) {
+                mstore(0x00, value)
+
+                return(0x00, 0x20)
+            }
+
+            function returnBool(value) {
+                revertIfNotBool(value)
+                
+                mstore(0x00, value)
+
+                return(0x00, 0x20)
+            }
+
+            function returnArray(mArrayLengthPointer) {
+                let mArrayOffsetPointer := sub(mArrayLengthPointer, 0x20)
+
+                // Offset of array in response
+                mstore(mArrayOffsetPointer, 0x20)
+                let arrayLength := mload(mArrayLengthPointer)
+
+                // Return memory from array's offset to its last item
+                return(mArrayOffsetPointer, add(mArrayOffsetPointer, mul(add(arrayLength, 2), 0x20)))
+            }
+
+            /**
              * ERC1155 functions
              */
             function uri(id) {
@@ -136,7 +224,7 @@ object "YULRC1155" {
                 // Store uri string length
                 mstore(0x20, uriLength)
 
-                // // Store uri string data
+                // Store uri string data
                 for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
                 {
                     let dataSlot := add(uriLengthSlot(), i)
@@ -176,6 +264,7 @@ object "YULRC1155" {
 
                     // Get account and id at this index position
                     let account := mload(add(mAccountsArrayLengthPointer, mul(i, 0x20)))
+                    revertIfNotValidAddress(account)
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
 
                     // Get account balance
@@ -190,7 +279,6 @@ object "YULRC1155" {
             }
 
             function setApprovalForAll(operator, approved) {
-                // Revert if caller trying to approve themselves
                 revertIfEqual(caller(), operator)
 
                 let sOperatorApprovalKey := getOperatorApprovalKey(caller(), operator)
@@ -260,15 +348,15 @@ object "YULRC1155" {
                     _transfer(from, to, id, amount)
                 }
 
-                // if addressIsContract(to) {
-                //     callOnERC1155BatchReceived(
-                //         from, 
-                //         to, 
-                //         mIdsArrayLengthPointer, 
-                //         mAmountsArrayLengthPointer, 
-                //         data
-                //     )
-                // }
+                if addressIsContract(to) {
+                    callOnERC1155BatchReceived(
+                        from, 
+                        to, 
+                        mIdsArrayLengthPointer, 
+                        mAmountsArrayLengthPointer, 
+                        data
+                    )
+                }
 
                 emitTransferBatchEvent(
                     caller(), 
@@ -374,20 +462,24 @@ object "YULRC1155" {
                 mstore(mInputPointer, onERC1155ReceivedSelector)
                 // address `operator`
                 mstore(add(mInputPointer, 0x04), caller())
-                // // address `from`
+                // address `from`
                 mstore(add(mInputPointer, 0x24), from)
-                // // uint256 `id`
+                // uint256 `id`
                 mstore(add(mInputPointer, 0x44), id)
-                // // uint256 `value`
+                // uint256 `value`
                 mstore(add(mInputPointer, 0x64), amount)
-                // // bytes `data` offset
+                // bytes `data` offset
                 mstore(add(mInputPointer, 0x84), 0xa0)
-                // // bytes `data` length
+                // bytes `data` length
                 let dataLength := 1
                 mstore(add(mInputPointer, 0xa4), dataLength)
                 // bytes `data` data
-                if dataLength {    
-                    mstore(add(mInputPointer, 0xc4), 0x02)
+                if dataLength {
+                    for { let i := 1 } lt(i, add(dataLength, 1)) { i := add(i, 1) }
+                    {
+                        let bytesData := mload(add(data, mul(i, 0x20)))
+                        mstore(add(mInputPointer, add(0xa4, mul(i, 0x20))), bytesData)
+                    }
                 }
 
                 // Call `onERC1155Received` on `to` contract
@@ -412,7 +504,72 @@ object "YULRC1155" {
                 }
             }
 
-            function callOnERC1155BatchReceived() {}
+            function callOnERC1155BatchReceived(
+                from, 
+                to, 
+                mIdsArrayLengthPointer, 
+                mAmountsArrayLengthPointer, 
+                data
+            ) {
+                // Build `onERC1155Received` calldata
+                let mFreeMemoryPointer := mload(0x00)
+                let mInputPointer := mFreeMemoryPointer
+                let onERC1155BatchReceivedSelector := shl(0xE0, 0xbc197c81)
+                let idsArrayLength := mload(mIdsArrayLengthPointer)
+                let amountsArrayLength := idsArrayLength
+
+                // Function selector
+                mstore(mInputPointer, onERC1155BatchReceivedSelector)
+                // address `operator`
+                mstore(add(mInputPointer, 0x04), caller())
+                // address `from`
+                mstore(add(mInputPointer, 0x24), from)
+                // uint256[] `ids` offset
+                let idsArrayOffset := 0xa0
+                mstore(add(mInputPointer, 0x44), idsArrayOffset)
+                // uint256[] `values` offset
+                let valuesArrayOffset := add(add(idsArrayOffset, 0x20), mul(idsArrayLength, 0x20))
+                mstore(add(mInputPointer, 0x64), valuesArrayOffset)
+                // bytes `data` offset
+                let dataArrayOffset := add(add(valuesArrayOffset, 0x20), mul(amountsArrayLength, 0x20))
+                mstore(add(mInputPointer, 0x84), dataArrayOffset)
+                // uint256[] `ids` length
+                mstore(add(mInputPointer, 0xa4), idsArrayLength)
+                // uint256[] `ids` data
+                if idsArrayLength {
+                    for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
+                    {
+                        let idData := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
+                        mstore(add(mInputPointer, add(0xa4, mul(i, 0x20))), idData)
+                    }
+                }
+                // uint256[] `values` length
+                // uint256[] `values` data
+                
+                // bytes `data` length
+                // bytes `data` data
+
+                // Call `onERC1155BatchReceived` on `to` contract
+                let success := call(
+                    gas(), // gas
+                    to, // contract address
+                    0, // wei to include
+                    mInputPointer, // input start
+                    add(0xc4, mul(0x20, 0x20)), // input size
+                    mFreeMemoryPointer, // output start
+                    0x20 // output size
+                )
+
+                if iszero(success) {
+                    revert(0, 0)
+                }
+
+                let response := mload(mFreeMemoryPointer)
+
+                if iszero(eq(response, onERC1155BatchReceivedSelector)) {
+                    revert(0, 0)
+                }
+            }
 
             /**
              * ERC1155 Events
@@ -505,154 +662,36 @@ object "YULRC1155" {
                 // keccak256("URI(string,uint256)")
                 let signatureHash := 0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b
 
+                // let uriLength := sload(uriLengthSlot())
+
+                // Store uri string offset within response
+                // mstore(0x00, 0x20)
+                // Store uri string length
+                // mstore(0x20, uriLength)
+
+                // // Store uri string data
+                // for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
+                // {
+                //     let dataSlot := add(uriLengthSlot(), i)
+                //     let uriData := sload(dataSlot)
+
+                //     mstore(add(0x20, mul(i, 0x20)), uriData)
+                // }
+
                 // store value in memory
                 // log2(0x00, 0x20, signatureHash, id)
             }
 
             /**
-             * Calldata decoding functions
-             */
-            function functionSelector() -> selector {
-                // Shift right by 224 bits leaving the first 4 bytes
-                selector := shr(0xE0, calldataload(0))
-            }
-
-            function decodeAsAddress(cdOffset) -> value {
-                let uintAtOffset := decodeAsUint(cdOffset)
-                revertIfNotValidAddress(uintAtOffset)
-
-                value := uintAtOffset
-            }
-
-            function decodeAsAddressArray(cdOffset) -> value {
-                value := decodeAsArray(cdOffset, 1)
-            }
-
-            function decodeAsUintArray(cdOffset) -> value {
-                value := decodeAsArray(cdOffset, 0)
-            }
-
-            function decodeAsArray(cdOffset, isAddressArray) -> mArrayLengthPointer {
-                // Get position and length of array from calldata
-                let cdOffsetOfArrayPosition := add(4, mul(cdOffset, 0x20))
-                let cdOffsetOfArray := calldataload(cdOffsetOfArrayPosition)
-                let cdArrayLengthPosition := add(4, cdOffsetOfArray)
-                let arrayLength := calldataload(cdArrayLengthPosition)
-
-                // Load free memory pointer
-                let mFreeMemoryPointer := mload(0x00)
-
-                // Store array length
-                mFreeMemoryPointer := mload(0x00)
-                let mArrayLengthPointer_ := mFreeMemoryPointer
-                mstore(mArrayLengthPointer_, arrayLength)
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                // Load each array item into free memory
-                for { let i := 1 } lt(i, add(arrayLength, 1)) { i := add(i, 1) }
-                {
-                    mFreeMemoryPointer := mload(0x00)
-
-                    let cdPosition := add(cdArrayLengthPosition, mul(i, 0x20))
-                    let cdValue := calldataload(cdPosition)
-
-                    if isAddressArray {
-                        revertIfNotValidAddress(cdValue)
-                    }
-
-                    mstore(mFreeMemoryPointer, cdValue)
-
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                }
-
-                mArrayLengthPointer := mArrayLengthPointer_
-            }
-
-            function decodeAsUint(cdOffset) -> value {
-                let cdPosition := add(4, mul(cdOffset, 0x20))
-                revertIfPositionNotInCalldata(cdPosition)
-
-                value := calldataload(cdPosition)
-            }
-
-            function decodeAsBool(cdOffset) -> value {
-                let cdPosition := add(4, mul(cdOffset, 0x20))
-                revertIfPositionNotInCalldata(cdPosition)
-
-                let valueAtPosition := calldataload(cdPosition)
-                revertIfNotBool(valueAtPosition)
-
-                value := valueAtPosition
-            }
-
-            function decodeAsBytes(cdOffset) -> mBytesLengthPointer {
-                // Get position and length of bytes from calldata
-                let cdOffsetOfBytesPosition := add(4, mul(cdOffset, 0x20))
-                let cdOffsetOfBytes := calldataload(cdOffsetOfBytesPosition)
-                let cdBytesLengthPosition := add(4, cdOffsetOfBytes)
-                let bytesLength := calldataload(cdBytesLengthPosition)
-
-                // Load free memory pointer
-                let mFreeMemoryPointer := mload(0x00)
-
-                // Store bytes length
-                mFreeMemoryPointer := mload(0x00)
-                let mBytesLengthPointer_ := mFreeMemoryPointer
-                mstore(mBytesLengthPointer_, bytesLength)
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                // Load each byte into memory
-                for { let i := 1 } lt(i, add(bytesLength, 1)) { i := add(i, 1) }
-                {
-                    mFreeMemoryPointer := mload(0x00)
-
-                    let cdPosition := add(cdBytesLengthPosition, mul(i, 0x20))
-                    let cdValue := calldataload(cdPosition)
-
-                    mstore(mFreeMemoryPointer, cdValue)
-
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                }
-
-                mBytesLengthPointer := mBytesLengthPointer_
-            }
-
-            /**
-             * Calldata encoding functions
-             */
-            function returnUint(value) {
-                mstore(0x00, value)
-
-                return(0x00, 0x20)
-            }
-
-            function returnBool(value) {
-                revertIfNotBool(value)
-                mstore(0x00, value)
-
-                return(0x00, 0x20)
-            }
-
-            function returnArray(mArrayLengthPointer) {
-                let mArrayOffsetPointer := sub(mArrayLengthPointer, 0x20)
-                // Offset of array in response
-                mstore(mArrayOffsetPointer, 0x20)
-                let arrayLength := mload(mArrayLengthPointer)
-
-                // Return memory from array offset to the last item
-                return(mArrayOffsetPointer, add(mArrayOffsetPointer, mul(add(arrayLength, 2), 0x20)))
-            }
-
-            /**
              * Storage access functions
              */
-            function getAccountBalanceKey(account, id) -> sBalanceKey {
+            function getAccountBalanceKey(account, tokenId) -> sBalanceKey {
                 // Balances: mapping uint256 tokenID => (address account => uint256 balance)
                 
-                // Hash `id` and `balancesSlot()`
-                let hashOfIdandBalancesSlot := keccakHashTwoValues(id, balancesSlot())
+                // Hash `tokenId` and `balancesSlot()`
+                let hashOfIdandBalancesSlot := keccakHashTwoValues(tokenId, balancesSlot())
 
-                // `sBalanceKey` = keccak256(`account`, keccak256(`id`, `balancesSlot()`))
+                // `sBalanceKey` = keccak256(`account`, keccak256(`tokenId`, `balancesSlot()`))
                 sBalanceKey := keccakHashTwoValues(account, hashOfIdandBalancesSlot)
             }
 
@@ -670,31 +709,27 @@ object "YULRC1155" {
              * Gating functions
              */
             function revertIfPositionNotInCalldata(cdPosition) {
-                // Require `cdPosition` exists within calldata
                 if lt(calldatasize(), add(cdPosition, 0x20)) {
                     revert(0, 0)
                 }
             }
 
-            function revertIfCallerNotContractOwner() {
+            function revertIfCallerNotOwner() {
                 let owner := sload(ownerSlot())
 
-                // Require `caller()` is contract owner
                 if iszero(eq(caller(), owner)) {
                     revert(0, 0)
                 }
             }
 
-            function revertIfNotValidAddress(value) {
-                // Require `value` is valid address
-                if iszero(iszero(and(value, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
+            function revertIfNotValidAddress(address_) {
+                if iszero(iszero(and(address_, not(0xffffffffffffffffffffffffffffffffffffffff)))) {
                     revert(0, 0)
                 }
             }
 
-            function revertIfZeroAddress(value) {
-                // Revert if `value` is zero address
-                if iszero(value) {
+            function revertIfZeroAddress(address_) {
+                if iszero(address_) {
                     revert(0, 0)
                 }
             }
@@ -709,7 +744,6 @@ object "YULRC1155" {
                     isBool := 1
                 }
 
-                // Require `value` is a bool
                 if iszero(isBool) {
                     revert(0, 0)
                 }
@@ -718,15 +752,14 @@ object "YULRC1155" {
             function revertIfBalanceInsufficient(accountBalance, amount) {
                 let gte := 0
 
-                if eq(accountBalance, amount) {
-                    gte := 1
-                }
-
                 if gt(accountBalance, amount) {
                     gte := 1
                 }
+
+                if eq(accountBalance, amount) {
+                    gte := 1
+                }
                 
-                // Require `accountBalance` >= `amount`
                 if iszero(gte) {
                     revert(0, 0)
                 }
@@ -763,12 +796,12 @@ object "YULRC1155" {
             function keccakHashTwoValues(valueOne, valueTwo) -> keccakHash {
                 let mFreeMemoryPointer := mload(0x00)
 
-                // Store words `valueOne` and `valueTwo` starting at `mFreeMemoryPointer`
+                // Store words `valueOne` and `valueTwo` in free memory
                 mstore(mFreeMemoryPointer, valueOne)
                 mstore(add(mFreeMemoryPointer, 0x20), valueTwo)
 
-                let keccakHash_ := keccak256(mFreeMemoryPointer, 0x40)
-                mstore(mFreeMemoryPointer, keccakHash_)
+                // Store hash of `valueOne` and `valueTwo` in free memory
+                mstore(mFreeMemoryPointer, keccak256(mFreeMemoryPointer, 0x40))
 
                 keccakHash := mload(mFreeMemoryPointer)
             }
