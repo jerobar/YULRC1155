@@ -1103,8 +1103,31 @@ describe('YULRC1155', function () {
       console.log('to do')
     })
 
-    it('succeeds when calling onERC1155Received with data', async function () {
-      console.log('to do')
+    it.only('succeeds when calling onERC1155Received with data', async function () {
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { erc1155ReceiverContract } = await loadFixture(
+        deployERC1155ReceiverFixture
+      )
+      const [_, tokenBatchHolder, tokenReceiver] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      const transferBatchTx = await yulrc1155Contract
+        .connect(tokenBatchHolder)
+        .safeBatchTransferFrom(
+          tokenBatchHolder.address,
+          erc1155ReceiverContract.address,
+          tokenBatchIds,
+          mintAmounts,
+          DATA
+        )
+      await transferBatchTx.wait(1)
     })
 
     it('succeeds when calling a receiver contract that reverts only on single transfers', async function () {

@@ -5,14 +5,12 @@
  * 
  * Note that the approach below prioritizes readability over efficiency and 
  * adopts a convention of prefixing calldata-related variables with `cd`, 
- * storage with `s` and memory with `m` where it aids clarity.
+ * storage with `s` and memory with `m` where it adds clarity.
  * 
  * @todos
- * - calldatasize/calldatacopy approach for decodeAsBytesArray
- * - uri event code ? even though it's not being used ? 
  * 
- * - copyBytesArrayIntoMemory(at, to)
- * - 
+ * - fix data being passed along with call tx's (length is not in bytes)
+ * - utility fn copyBytesArrayIntoMemory(at, to) ?
  */
 object "YULRC1155" {
 
@@ -178,7 +176,7 @@ object "YULRC1155" {
 
                 // Copy bytes data into free memory after length
                 calldatacopy(add(mFreeMemoryPointer, 0x20), add(cdBytesLengthPosition, 0x20), mul(bytesLength, 0x20))
-                
+
                 // Increment free memory pointer to after bytes array
                 incrementFreeMemoryPointer(mFreeMemoryPointer, add(0x20, mul(bytesLength, 0x20)))
                 
@@ -205,7 +203,7 @@ object "YULRC1155" {
             function returnArray(mArrayLengthPointer) {
                 let mArrayOffsetPointer := sub(mArrayLengthPointer, 0x20)
 
-                // Offset of array in response
+                // Store offset of array within response
                 mstore(mArrayOffsetPointer, 0x20)
                 let arrayLength := mload(mArrayLengthPointer)
 
@@ -221,6 +219,7 @@ object "YULRC1155" {
 
                 // Store uri string offset within response
                 mstore(0x00, 0x20)
+
                 // Store uri string length
                 mstore(0x20, uriLength)
 
@@ -339,7 +338,7 @@ object "YULRC1155" {
 
                 revertIfNotEqual(idsArrayLength, amountsArrayLength)
 
-                // For each token id, transfer to 'to' account
+                // For each token id, transfer `amount` to 'to' account
                 for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                 {
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
@@ -513,49 +512,68 @@ object "YULRC1155" {
             ) {
                 // Build `onERC1155Received` calldata
                 let mFreeMemoryPointer := mload(0x00)
-                let mInputPointer := mFreeMemoryPointer
                 let onERC1155BatchReceivedSelector := shl(0xE0, 0xbc197c81)
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
-                let amountsArrayLength := idsArrayLength
+                let dataLength := mload(data)
 
                 // Function selector
-                mstore(mInputPointer, onERC1155BatchReceivedSelector)
+                mstore(mFreeMemoryPointer, onERC1155BatchReceivedSelector)
                 // address `operator`
-                mstore(add(mInputPointer, 0x04), caller())
+                mstore(add(mFreeMemoryPointer, 0x04), caller())
                 // address `from`
-                mstore(add(mInputPointer, 0x24), from)
+                mstore(add(mFreeMemoryPointer, 0x24), from)
                 // uint256[] `ids` offset
-                let idsArrayOffset := 0xa0
-                mstore(add(mInputPointer, 0x44), idsArrayOffset)
+                mstore(add(mFreeMemoryPointer, 0x44), 0xa0)
                 // uint256[] `values` offset
-                let valuesArrayOffset := add(add(idsArrayOffset, 0x20), mul(idsArrayLength, 0x20))
-                mstore(add(mInputPointer, 0x64), valuesArrayOffset)
+                let valuesArrayOffset := add(add(0xa0, 0x20), mul(idsArrayLength, 0x20))
+                mstore(add(mFreeMemoryPointer, 0x64), valuesArrayOffset)
                 // bytes `data` offset
-                let dataArrayOffset := add(add(valuesArrayOffset, 0x20), mul(amountsArrayLength, 0x20))
-                mstore(add(mInputPointer, 0x84), dataArrayOffset)
+                let dataArrayOffset := add(add(valuesArrayOffset, 0x20), mul(idsArrayLength, 0x20))
+                mstore(add(mFreeMemoryPointer, 0x84), dataArrayOffset)
                 // uint256[] `ids` length
-                mstore(add(mInputPointer, 0xa4), idsArrayLength)
-                // uint256[] `ids` data
+                let idsArrayLengthPointer := add(mFreeMemoryPointer, 0xa4)
+                mstore(idsArrayLengthPointer, idsArrayLength)
+                // // uint256[] `ids` data
                 if idsArrayLength {
                     for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                     {
                         let idData := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
-                        mstore(add(mInputPointer, add(0xa4, mul(i, 0x20))), idData)
+                        mstore(add(mFreeMemoryPointer, add(0xa4, mul(i, 0x20))), idData)
                     }
                 }
                 // uint256[] `values` length
+                let valuesLengthPointer := add(add(idsArrayLengthPointer, 0x20), mul(idsArrayLength, 0x20))
+                mstore(valuesLengthPointer, idsArrayLength)
                 // uint256[] `values` data
-                
+                if idsArrayLength {
+                    for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
+                    {
+                        let amountData := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
+                        mstore(add(valuesLengthPointer, mul(i, 0x20)), 0x123)
+                    }
+                }
                 // bytes `data` length
+                let dataLengthPointer := add(add(valuesLengthPointer, mul(idsArrayLength, 0x20)), 0x20)
+                mstore(dataLengthPointer, dataLength)
                 // bytes `data` data
+                if dataLength {
+                    for { let i := 1 } lt(i, add(dataLength, 1)) { i := add(i, 1) }
+                    {
+                        let dataStuff := mload(add(data, mul(i, 0x20)))
+                        mstore(add(dataLengthPointer, mul(i, 0x20)), 0x69)
+                    }
+                }
 
                 // Call `onERC1155BatchReceived` on `to` contract
                 let success := call(
                     gas(), // gas
                     to, // contract address
                     0, // wei to include
-                    mInputPointer, // input start
-                    add(0xc4, mul(0x20, 0x20)), // input size
+                    mFreeMemoryPointer, // input start
+                    add(
+                        add(0xa4, mul(2, add(0x20, mul(idsArrayLength, 0x20)))), 
+                        add(0x20, mul(dataLength, 0x20))
+                    ), // input size
                     mFreeMemoryPointer, // output start
                     0x20 // output size
                 )
@@ -662,24 +680,24 @@ object "YULRC1155" {
                 // keccak256("URI(string,uint256)")
                 let signatureHash := 0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b
 
-                // let uriLength := sload(uriLengthSlot())
+                let uriLength := sload(uriLengthSlot())
 
                 // Store uri string offset within response
-                // mstore(0x00, 0x20)
+                mstore(0x00, 0x20)
+
                 // Store uri string length
-                // mstore(0x20, uriLength)
+                mstore(0x20, uriLength)
 
-                // // Store uri string data
-                // for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
-                // {
-                //     let dataSlot := add(uriLengthSlot(), i)
-                //     let uriData := sload(dataSlot)
+                // Store uri string data
+                for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
+                {
+                    let dataSlot := add(uriLengthSlot(), i)
+                    let uriData := sload(dataSlot)
 
-                //     mstore(add(0x20, mul(i, 0x20)), uriData)
-                // }
+                    mstore(add(0x20, mul(i, 0x20)), uriData)
+                }
 
-                // store value in memory
-                // log2(0x00, 0x20, signatureHash, id)
+                log2(0x00, add(1, div(uriLength, 0x20)), signatureHash, id)
             }
 
             /**
