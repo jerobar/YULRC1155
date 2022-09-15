@@ -68,7 +68,7 @@ async function deployERC1155ReceiverFixture() {
 
   return { erc1155ReceiverContract }
 }
-// Note: separate fixture function needed to avoid `FixtureSnapshotError` bug
+// Hack: separate fixture function needed to avoid `FixtureSnapshotError` bug
 async function deployERC1155ReceiverFixtureTwo() {
   const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
   const erc1155ReceiverContract = await ERC1155Receiver.deploy()

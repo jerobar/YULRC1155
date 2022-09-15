@@ -233,59 +233,15 @@ object "YULRC1155" {
                 _transfer(from, to, id, amount)
                 
                 if addressIsContract(to) {
-                    // Build `onERC1155Received` calldata
-                    let mFreeMemoryPointer := mload(0x00)
-                    let mInputPointer := mFreeMemoryPointer
-                    let onERC1155ReceivedSelector := shl(0xE0, 0xf23a6e61)
-
-                    // Function selector
-                    mstore(mInputPointer, onERC1155ReceivedSelector)
-                    // address `operator`
-                    mstore(add(mInputPointer, 0x04), caller())
-                    // // address `from`
-                    mstore(add(mInputPointer, 0x24), from)
-                    // // uint256 `id`
-                    mstore(add(mInputPointer, 0x44), id)
-                    // // uint256 `value`
-                    mstore(add(mInputPointer, 0x64), amount)
-                    // // bytes `data` offset
-                    mstore(add(mInputPointer, 0x84), 0xa0)
-                    // // bytes `data` length
-                    let dataLength := 1
-                    mstore(add(mInputPointer, 0xa4), dataLength)
-                    // bytes `data` data
-                    if dataLength {    
-                        mstore(add(mInputPointer, 0xc4), 0x02)
-                    }
-
-                    // Call `onERC1155Received` on `to` contract
-                    let success := call(
-                        gas(), // gas
-                        to, // contract address
-                        0, // wei to include
-                        mInputPointer, // input start
-                        add(0xc4, mul(dataLength, 0x20)), // input size
-                        mFreeMemoryPointer, // output start
-                        0x20 // output size
-                    )
-
-                    if iszero(success) {
-                        revert(0, 0)
-                    }
-
-                    let response := mload(mFreeMemoryPointer)
-
-                    if iszero(eq(response, onERC1155ReceivedSelector)) {
-                        revert(0, 0)
-                    }
+                    callOnERC1155Received(from, to, id, amount, data)
                 }
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
             }
 
             function safeBatchTransferFrom(
-                fromAccount, 
-                toAccount, 
+                from, 
+                to, 
                 mIdsArrayLengthPointer, 
                 mAmountsArrayLengthPointer, 
                 data
@@ -301,16 +257,23 @@ object "YULRC1155" {
                     let id := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
                     let amount := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
 
-                    _transfer(fromAccount, toAccount, id, amount)
+                    _transfer(from, to, id, amount)
                 }
 
-                // If `to` address is a contract
-                // ...
+                // if addressIsContract(to) {
+                //     callOnERC1155BatchReceived(
+                //         from, 
+                //         to, 
+                //         mIdsArrayLengthPointer, 
+                //         mAmountsArrayLengthPointer, 
+                //         data
+                //     )
+                // }
 
                 emitTransferBatchEvent(
                     caller(), 
-                    fromAccount, 
-                    toAccount, 
+                    from, 
+                    to, 
                     mIdsArrayLengthPointer,
                     mAmountsArrayLengthPointer 
                 )
@@ -400,6 +363,56 @@ object "YULRC1155" {
                     mAmountsArrayLengthPointer 
                 )
             }
+
+            function callOnERC1155Received(from, to, id, amount, data) {
+                // Build `onERC1155Received` calldata
+                let mFreeMemoryPointer := mload(0x00)
+                let mInputPointer := mFreeMemoryPointer
+                let onERC1155ReceivedSelector := shl(0xE0, 0xf23a6e61)
+
+                // Function selector
+                mstore(mInputPointer, onERC1155ReceivedSelector)
+                // address `operator`
+                mstore(add(mInputPointer, 0x04), caller())
+                // // address `from`
+                mstore(add(mInputPointer, 0x24), from)
+                // // uint256 `id`
+                mstore(add(mInputPointer, 0x44), id)
+                // // uint256 `value`
+                mstore(add(mInputPointer, 0x64), amount)
+                // // bytes `data` offset
+                mstore(add(mInputPointer, 0x84), 0xa0)
+                // // bytes `data` length
+                let dataLength := 1
+                mstore(add(mInputPointer, 0xa4), dataLength)
+                // bytes `data` data
+                if dataLength {    
+                    mstore(add(mInputPointer, 0xc4), 0x02)
+                }
+
+                // Call `onERC1155Received` on `to` contract
+                let success := call(
+                    gas(), // gas
+                    to, // contract address
+                    0, // wei to include
+                    mInputPointer, // input start
+                    add(0xc4, mul(dataLength, 0x20)), // input size
+                    mFreeMemoryPointer, // output start
+                    0x20 // output size
+                )
+
+                if iszero(success) {
+                    revert(0, 0)
+                }
+
+                let response := mload(mFreeMemoryPointer)
+
+                if iszero(eq(response, onERC1155ReceivedSelector)) {
+                    revert(0, 0)
+                }
+            }
+
+            function callOnERC1155BatchReceived() {}
 
             /**
              * ERC1155 Events
