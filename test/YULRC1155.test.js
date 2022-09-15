@@ -38,11 +38,23 @@ async function deployUnexpectedValueFixture() {
 
   return { unexpectedValueContract }
 }
+async function deployUnexpectedValueFixtureTwo() {
+  const UnexpectedValue = await ethers.getContractFactory('UnexpectedValue')
+  const unexpectedValueContract = await UnexpectedValue.deploy()
+
+  return { unexpectedValueContract }
+}
 
 /**
  * Fixture: Deploys `ReceiverReverts` contract.
  */
 async function deployReceiverRevertsFixture() {
+  const ReceiverReverts = await ethers.getContractFactory('ReceiverReverts')
+  const receiverRevertsContract = await ReceiverReverts.deploy()
+
+  return { receiverRevertsContract }
+}
+async function deployReceiverRevertsFixtureTwo() {
   const ReceiverReverts = await ethers.getContractFactory('ReceiverReverts')
   const receiverRevertsContract = await ReceiverReverts.deploy()
 
@@ -58,6 +70,25 @@ async function deployMissingFunctionFixture() {
 
   return { missingFunctionContract }
 }
+async function deployMissingFunctionFixtureTwo() {
+  const MissingFunction = await ethers.getContractFactory('MissingFunction')
+  const missingFunctionContract = await MissingFunction.deploy()
+
+  return { missingFunctionContract }
+}
+
+/**
+ * Fixture: Deploys `RevertsOnSingleTransfers` contract.
+ */
+async function deployRevertsOnSingleTransfers() {
+  const RevertsOnSingleTransfers = await ethers.getContractFactory(
+    'RevertsOnSingleTransfers'
+  )
+  const revertsOnSingleTransfersContract =
+    await RevertsOnSingleTransfers.deploy()
+
+  return { revertsOnSingleTransfersContract }
+}
 
 /**
  * Fixture: Deploys `ERC1155Receiver` contract.
@@ -70,6 +101,18 @@ async function deployERC1155ReceiverFixture() {
 }
 // Hack: separate fixture function needed to avoid `FixtureSnapshotError` bug
 async function deployERC1155ReceiverFixtureTwo() {
+  const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
+  const erc1155ReceiverContract = await ERC1155Receiver.deploy()
+
+  return { erc1155ReceiverContract }
+}
+async function deployERC1155ReceiverFixtureThree() {
+  const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
+  const erc1155ReceiverContract = await ERC1155Receiver.deploy()
+
+  return { erc1155ReceiverContract }
+}
+async function deployERC1155ReceiverFixtureFour() {
   const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
   const erc1155ReceiverContract = await ERC1155Receiver.deploy()
 
@@ -944,15 +987,87 @@ describe('YULRC1155', function () {
     })
 
     it('reverts when receiver contract returns unexpected value', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { unexpectedValueContract } = await loadFixture(
+        deployUnexpectedValueFixtureTwo
+      )
+      const [_, tokenBatchHolder] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenBatchHolder)
+          .safeBatchTransferFrom(
+            tokenBatchHolder.address,
+            unexpectedValueContract.address,
+            tokenBatchIds,
+            mintAmounts,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('reverts when receiver contract reverts', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { receiverRevertsContract } = await loadFixture(
+        deployReceiverRevertsFixtureTwo
+      )
+      const [_, tokenBatchHolder] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenBatchHolder)
+          .safeBatchTransferFrom(
+            tokenBatchHolder.address,
+            receiverRevertsContract.address,
+            tokenBatchIds,
+            mintAmounts,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('reverts when receiver does not implement the required function', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { missingFunctionContract } = await loadFixture(
+        deployMissingFunctionFixtureTwo
+      )
+      const [_, tokenBatchHolder] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenBatchHolder)
+          .safeBatchTransferFrom(
+            tokenBatchHolder.address,
+            missingFunctionContract.address,
+            tokenBatchIds,
+            mintAmounts,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('debits transferred balances from sender', async function () {
@@ -1100,13 +1215,36 @@ describe('YULRC1155', function () {
     })
 
     it('succeeds when calling onERC1155Received without data', async function () {
-      console.log('to do')
-    })
-
-    it.only('succeeds when calling onERC1155Received with data', async function () {
       const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
       const { erc1155ReceiverContract } = await loadFixture(
-        deployERC1155ReceiverFixture
+        deployERC1155ReceiverFixtureThree
+      )
+      const [_, tokenBatchHolder, tokenReceiver] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      const transferBatchTx = await yulrc1155Contract
+        .connect(tokenBatchHolder)
+        .safeBatchTransferFrom(
+          tokenBatchHolder.address,
+          erc1155ReceiverContract.address,
+          tokenBatchIds,
+          mintAmounts,
+          '0x00'
+        )
+      await transferBatchTx.wait(1)
+    })
+
+    it('succeeds when calling onERC1155Received with data', async function () {
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { erc1155ReceiverContract } = await loadFixture(
+        deployERC1155ReceiverFixtureFour
       )
       const [_, tokenBatchHolder, tokenReceiver] = await ethers.getSigners()
 
@@ -1131,7 +1269,30 @@ describe('YULRC1155', function () {
     })
 
     it('succeeds when calling a receiver contract that reverts only on single transfers', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { revertsOnSingleTransfersContract } = await loadFixture(
+        deployRevertsOnSingleTransfers
+      )
+      const [_, tokenBatchHolder] = await ethers.getSigners()
+
+      const mintBatchTx = await yulrc1155Contract.mintBatch(
+        tokenBatchHolder.address,
+        tokenBatchIds,
+        mintAmounts,
+        DATA
+      )
+      await mintBatchTx.wait(1)
+
+      const transferBatchTx = await yulrc1155Contract
+        .connect(tokenBatchHolder)
+        .safeBatchTransferFrom(
+          tokenBatchHolder.address,
+          revertsOnSingleTransfersContract.address,
+          tokenBatchIds,
+          mintAmounts,
+          DATA
+        )
+      await transferBatchTx.wait(1)
     })
 
     it('emits a TransferBatch log', async function () {

@@ -6,11 +6,6 @@
  * Note that the approach below prioritizes readability over efficiency and 
  * adopts a convention of prefixing calldata-related variables with `cd`, 
  * storage with `s` and memory with `m` where it adds clarity.
- * 
- * @todos
- * 
- * - fix data being passed along with call tx's (length is not in bytes)
- * - utility fn copyBytesArrayIntoMemory(at, to) ?
  */
 object "YULRC1155" {
 
@@ -456,6 +451,7 @@ object "YULRC1155" {
                 let mFreeMemoryPointer := mload(0x00)
                 let mInputPointer := mFreeMemoryPointer
                 let onERC1155ReceivedSelector := shl(0xE0, 0xf23a6e61)
+                let dataLength := mload(data)
 
                 // Function selector
                 mstore(mInputPointer, onERC1155ReceivedSelector)
@@ -470,14 +466,14 @@ object "YULRC1155" {
                 // bytes `data` offset
                 mstore(add(mInputPointer, 0x84), 0xa0)
                 // bytes `data` length
-                let dataLength := 1
-                mstore(add(mInputPointer, 0xa4), dataLength)
+                let dataLengthPointer := add(mInputPointer, 0xa4)
+                mstore(dataLengthPointer, add(1, div(dataLength, 0x20)))
                 // bytes `data` data
                 if dataLength {
-                    for { let i := 1 } lt(i, add(dataLength, 1)) { i := add(i, 1) }
+                    for { let i := 1 } lt(i, add(2, div(dataLength, 0x20))) { i := add(i, 1) }
                     {
-                        let bytesData := mload(add(data, mul(i, 0x20)))
-                        mstore(add(mInputPointer, add(0xa4, mul(i, 0x20))), bytesData)
+                        let data_ := mload(add(data, mul(i, 0x20)))
+                        mstore(add(dataLengthPointer, mul(i, 0x20)), data_)
                     }
                 }
 
@@ -533,7 +529,7 @@ object "YULRC1155" {
                 // uint256[] `ids` length
                 let idsArrayLengthPointer := add(mFreeMemoryPointer, 0xa4)
                 mstore(idsArrayLengthPointer, idsArrayLength)
-                // // uint256[] `ids` data
+                // uint256[] `ids` data
                 if idsArrayLength {
                     for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                     {
@@ -549,18 +545,18 @@ object "YULRC1155" {
                     for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
                     {
                         let amountData := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
-                        mstore(add(valuesLengthPointer, mul(i, 0x20)), 0x123)
+                        mstore(add(valuesLengthPointer, mul(i, 0x20)), amountData)
                     }
                 }
                 // bytes `data` length
                 let dataLengthPointer := add(add(valuesLengthPointer, mul(idsArrayLength, 0x20)), 0x20)
-                mstore(dataLengthPointer, dataLength)
+                mstore(dataLengthPointer, add(1, div(dataLength, 0x20)))
                 // bytes `data` data
                 if dataLength {
-                    for { let i := 1 } lt(i, add(dataLength, 1)) { i := add(i, 1) }
+                    for { let i := 1 } lt(i, add(2, div(dataLength, 0x20))) { i := add(i, 1) }
                     {
-                        let dataStuff := mload(add(data, mul(i, 0x20)))
-                        mstore(add(dataLengthPointer, mul(i, 0x20)), 0x69)
+                        let data_ := mload(add(data, mul(i, 0x20)))
+                        mstore(add(dataLengthPointer, mul(i, 0x20)), data_)
                     }
                 }
 
@@ -572,7 +568,7 @@ object "YULRC1155" {
                     mFreeMemoryPointer, // input start
                     add(
                         add(0xa4, mul(2, add(0x20, mul(idsArrayLength, 0x20)))), 
-                        add(0x20, mul(dataLength, 0x20))
+                        add(0x40, mul(0x20, div(dataLength, 0x20)))
                     ), // input size
                     mFreeMemoryPointer, // output start
                     0x20 // output size
