@@ -236,44 +236,27 @@ object "YULRC1155" {
                     // Build `onERC1155Received` calldata
                     let mFreeMemoryPointer := mload(0x00)
                     let mInputPointer := mFreeMemoryPointer
-                    let onERC1155ReceivedSelector := 0xf23a6e61
+                    let onERC1155ReceivedSelector := shl(0xE0, 0xf23a6e61)
 
-                    // function selector
-                    mstore(mFreeMemoryPointer, onERC1155ReceivedSelector)
-                    incrementFreeMemoryPointer(mInputPointer, 0x04)
-
-                    // bytes `data` offset
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, 0xA0)
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
+                    // Function selector
+                    mstore(mInputPointer, onERC1155ReceivedSelector)
                     // address `operator`
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, caller())
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                    // address `from`
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, from)
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                    // uint256 `id`
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, id)
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                    // uint256 `value`
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, amount)
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                    // bytes `data` length
-                    mFreeMemoryPointer := mload(0x00)
-                    mstore(mFreeMemoryPointer, 0x00)
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                    mFreeMemoryPointer := mload(0x00)
-
-                    // bytes `data`
+                    mstore(add(mInputPointer, 0x04), caller())
+                    // // address `from`
+                    mstore(add(mInputPointer, 0x24), from)
+                    // // uint256 `id`
+                    mstore(add(mInputPointer, 0x44), id)
+                    // // uint256 `value`
+                    mstore(add(mInputPointer, 0x64), amount)
+                    // // bytes `data` offset
+                    mstore(add(mInputPointer, 0x84), 0xa0)
+                    // // bytes `data` length
+                    let dataLength := 1
+                    mstore(add(mInputPointer, 0xa4), dataLength)
+                    // bytes `data` data
+                    if dataLength {    
+                        mstore(add(mInputPointer, 0xc4), 0x02)
+                    }
 
                     // Call `onERC1155Received` on `to` contract
                     let success := call(
@@ -281,9 +264,9 @@ object "YULRC1155" {
                         to, // contract address
                         0, // wei to include
                         mInputPointer, // input start
-                        mFreeMemoryPointer, // input end
+                        add(0xc4, mul(dataLength, 0x20)), // input size
                         mFreeMemoryPointer, // output start
-                        add(mFreeMemoryPointer, 0x04) // output end
+                        0x20 // output size
                     )
 
                     if iszero(success) {
@@ -295,9 +278,6 @@ object "YULRC1155" {
                     if iszero(eq(response, onERC1155ReceivedSelector)) {
                         revert(0, 0)
                     }
-
-                    // Reset free memory pointer
-                    mstore(0x00, mInputPointer)
                 }
 
                 emitTransferSingleEvent(caller(), from, to, id, amount)
@@ -325,20 +305,7 @@ object "YULRC1155" {
                 }
 
                 // If `to` address is a contract
-                // let toSize := extcodesize(to)
-                // if gt(toSize, 0) {
-                //     // Call `onERC1155BatchReceived` on `to` with `data`
-                //     // onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)
-                //     // let success := call(
-                //     //     gas(), // gas
-                //     //     to, // contract at address `to`
-                //     //     0, // wei to send
-                //     //     0x00, // input mem start
-                //     //     0x80, // input mem to
-                //     //     0x00, // output mem start
-                //     //     0x80 // output mem to
-                //     // )
-                // }
+                // ...
 
                 emitTransferBatchEvent(
                     caller(), 
@@ -685,7 +652,6 @@ object "YULRC1155" {
                 // `sOperatorApprovalKey` = keccak256(`operator`, keccak256(`account`, `operatorApprovalsSlot()`))
                 sOperatorApprovalKey := keccakHashTwoValues(operator, hashOfAccountAndOperatorApprovalsSlot)
             }
-
 
             /**
              * Gating functions

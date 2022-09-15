@@ -1,7 +1,10 @@
 const path = require('path')
 const fs = require('fs')
 const { getYULRC1155Bytecode } = require('./utils')
-const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers')
+const {
+  loadFixture,
+  getStorageAt
+} = require('@nomicfoundation/hardhat-network-helpers')
 const { expect } = require('chai')
 
 const URI = 'https://token-cdn-domain/{id}.json'
@@ -24,6 +27,53 @@ async function deployYULRC1155Fixture() {
   const yulrc1155Contract = await YULRC1155.deploy(URI)
 
   return { yulrc1155Contract }
+}
+
+/**
+ * Fixture: Deploys ERC1155Receiver `UnexpectedValue` contract.
+ */
+async function deployUnexpectedValueFixture() {
+  const UnexpectedValue = await ethers.getContractFactory('UnexpectedValue')
+  const unexpectedValueContract = await UnexpectedValue.deploy()
+
+  return { unexpectedValueContract }
+}
+
+/**
+ * Fixture: Deploys `ReceiverReverts` contract.
+ */
+async function deployReceiverRevertsFixture() {
+  const ReceiverReverts = await ethers.getContractFactory('ReceiverReverts')
+  const receiverRevertsContract = await ReceiverReverts.deploy()
+
+  return { receiverRevertsContract }
+}
+
+/**
+ * Fixture: Deploys `MissingFunction` contract.
+ */
+async function deployMissingFunctionFixture() {
+  const MissingFunction = await ethers.getContractFactory('MissingFunction')
+  const missingFunctionContract = await MissingFunction.deploy()
+
+  return { missingFunctionContract }
+}
+
+/**
+ * Fixture: Deploys `ERC1155Receiver` contract.
+ */
+async function deployERC1155ReceiverFixture() {
+  const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
+  const erc1155ReceiverContract = await ERC1155Receiver.deploy()
+
+  return { erc1155ReceiverContract }
+}
+// Note: separate fixture function needed to avoid `FixtureSnapshotError` bug
+async function deployERC1155ReceiverFixtureTwo() {
+  const ERC1155Receiver = await ethers.getContractFactory('ERC1155Receiver')
+  const erc1155ReceiverContract = await ERC1155Receiver.deploy()
+
+  return { erc1155ReceiverContract }
 }
 
 /**
@@ -314,7 +364,7 @@ describe('YULRC1155', function () {
    * - succeeds when calling onERC1155Received with data
    * - emits a TransferSingle log
    */
-  describe('safeTransferFrom', function () {
+  describe.only('safeTransferFrom', function () {
     const tokenId = 1990
     const mintAmount = 9001
 
@@ -394,15 +444,87 @@ describe('YULRC1155', function () {
     })
 
     it('reverts when receiver contract returns unexpected value', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { unexpectedValueContract } = await loadFixture(
+        deployUnexpectedValueFixture
+      )
+      const [_, tokenHolder] = await ethers.getSigners()
+
+      const mintTx = await yulrc1155Contract.mint(
+        tokenHolder.address,
+        tokenId,
+        mintAmount,
+        DATA
+      )
+      await mintTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenHolder)
+          .safeTransferFrom(
+            tokenHolder.address,
+            unexpectedValueContract.address,
+            tokenId,
+            mintAmount,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('reverts when receiver contract reverts', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { receiverRevertsContract } = await loadFixture(
+        deployReceiverRevertsFixture
+      )
+      const [_, tokenHolder] = await ethers.getSigners()
+
+      const mintTx = await yulrc1155Contract.mint(
+        tokenHolder.address,
+        tokenId,
+        mintAmount,
+        DATA
+      )
+      await mintTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenHolder)
+          .safeTransferFrom(
+            tokenHolder.address,
+            receiverRevertsContract.address,
+            tokenId,
+            mintAmount,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('reverts when receiver does not implement the required function', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { missingFunctionContract } = await loadFixture(
+        deployMissingFunctionFixture
+      )
+      const [_, tokenHolder] = await ethers.getSigners()
+
+      const mintTx = await yulrc1155Contract.mint(
+        tokenHolder.address,
+        tokenId,
+        mintAmount,
+        DATA
+      )
+      await mintTx.wait(1)
+
+      await expect(
+        yulrc1155Contract
+          .connect(tokenHolder)
+          .safeTransferFrom(
+            tokenHolder.address,
+            missingFunctionContract.address,
+            tokenId,
+            mintAmount,
+            DATA
+          )
+      ).to.be.reverted
     })
 
     it('debits transferred balance from sender', async function () {
@@ -584,17 +706,76 @@ describe('YULRC1155', function () {
     })
 
     it('succeeds when calling onERC1155Received without data', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { erc1155ReceiverContract } = await loadFixture(
+        deployERC1155ReceiverFixture
+      )
+      const [_, tokenHolder] = await ethers.getSigners()
+
+      const mintTx = await yulrc1155Contract.mint(
+        tokenHolder.address,
+        tokenId,
+        mintAmount,
+        DATA
+      )
+      await mintTx.wait(1)
+
+      const safeTransferFromTx = await yulrc1155Contract
+        .connect(tokenHolder)
+        .safeTransferFrom(
+          tokenHolder.address,
+          erc1155ReceiverContract.address,
+          tokenId,
+          mintAmount,
+          '0x00'
+        )
+      await safeTransferFromTx.wait(1)
+
+      expect(
+        await yulrc1155Contract.balanceOf(
+          erc1155ReceiverContract.address,
+          tokenId
+        )
+      ).to.equal(mintAmount)
     })
 
     it('succeeds when calling onERC1155Received with data', async function () {
-      console.log('to do')
+      const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
+      const { erc1155ReceiverContract } = await loadFixture(
+        deployERC1155ReceiverFixtureTwo
+      )
+      const [_, tokenHolder] = await ethers.getSigners()
+
+      const mintTx = await yulrc1155Contract.mint(
+        tokenHolder.address,
+        tokenId,
+        mintAmount,
+        DATA
+      )
+      await mintTx.wait(1)
+
+      const safeTransferFromTx = await yulrc1155Contract
+        .connect(tokenHolder)
+        .safeTransferFrom(
+          tokenHolder.address,
+          erc1155ReceiverContract.address,
+          tokenId,
+          mintAmount,
+          DATA
+        )
+      await safeTransferFromTx.wait(1)
+
+      expect(
+        await yulrc1155Contract.balanceOf(
+          erc1155ReceiverContract.address,
+          tokenId
+        )
+      ).to.equal(mintAmount)
     })
 
     it('emits a TransferSingle log', async function () {
       const { yulrc1155Contract } = await loadFixture(deployYULRC1155Fixture)
-      const [_, tokenHolder, tokenOperator, tokenReceiver] =
-        await ethers.getSigners()
+      const [_, tokenHolder, tokenReceiver] = await ethers.getSigners()
 
       const mintToTokenHolderTx = await yulrc1155Contract.mint(
         tokenHolder.address,
@@ -646,7 +827,7 @@ describe('YULRC1155', function () {
    * - succeeds when calling a receiver contract that reverts only on single transfers
    * - emits a TransferBatch log
    */
-  describe.only('safeBatchTransferFrom', function () {
+  describe('safeBatchTransferFrom', function () {
     const tokenBatchIds = [2000, 2010, 2020]
     const mintAmounts = [5000, 10000, 42195]
 

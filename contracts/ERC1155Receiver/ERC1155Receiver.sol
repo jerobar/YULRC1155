@@ -2,6 +2,11 @@
 
 pragma solidity 0.8.9;
 
+import "hardhat/console.sol";
+
+/**
+ * Working implementation of ERC1155Receiver.
+ */
 contract ERC1155Receiver {
     function onERC1155Received(
         address operator,
