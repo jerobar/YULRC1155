@@ -13,14 +13,14 @@ object "YULRC1155" {
      * Constructor
      * 
      * Stores the caller as contract owner, stores the uri string passed in 
-     * constructor and deploys the contract.
+     * the constructor and deploys the contract.
      */
     code {
         // Store the contract owner in slot 0
         sstore(0, caller())
 
         // Dev: hardcode storage for uri 'https://token-cdn-domain/{id}.json'
-        sstore(3, 0x22) // length
+        sstore(3, 0x22) // uri string length
         sstore(4, 0x68747470733a2f2f746f6b656e2d63646e2d646f6d61696e2f7b69647d2e6a73)
         sstore(5, 0x6f6e000000000000000000000000000000000000000000000000000000000000)
 
@@ -84,7 +84,7 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUint(2), 
                     decodeAsUint(3), 
-                    decodeAsArray(4)
+                    decodeAsBytes(4)
                 )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
@@ -94,12 +94,12 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUintArray(2), 
                     decodeAsUintArray(3), 
-                    decodeAsArray(4)
+                    decodeAsBytes(4)
                 )
             }
             // mint(address,uint256,uint256,bytes)
             case 0x731133e9 {
-                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsArray(3))
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsBytes(3))
             }
             // mintBatch(address,uint256[],uint256[],bytes)
             case 0x1f7fdffa {
@@ -107,7 +107,7 @@ object "YULRC1155" {
                     decodeAsAddress(0), 
                     decodeAsUintArray(1), 
                     decodeAsUintArray(2), 
-                    decodeAsArray(3)
+                    decodeAsBytes(3)
                 )
             }
             // burn(address,uint256,uint256)
@@ -170,17 +170,42 @@ object "YULRC1155" {
                 let arrayLength := calldataload(cdArrayLengthPosition)
 
                 // Store array length in free memory
-                let mFreeMemoryPointer := mload(0x00)
-                let mArrayLengthPointer_ := mFreeMemoryPointer
+                let mArrayLengthPointer_ := mload(0x00)
                 mstore(mArrayLengthPointer_, arrayLength)
 
-                // Copy array data into free memory after length
-                calldatacopy(add(mFreeMemoryPointer, 0x20), add(cdArrayLengthPosition, 0x20), mul(arrayLength, 0x20))
+                if arrayLength {
+                    // Copy array data into free memory after length
+                    calldatacopy(add(mArrayLengthPointer_, 0x20), add(cdArrayLengthPosition, 0x20), mul(arrayLength, 0x20))
 
-                // Increment free memory pointer to after array array
-                mIncrementFreeMemoryPointer(mFreeMemoryPointer, add(0x20, mul(arrayLength, 0x20)))
+                    // Increment free memory pointer to after array
+                    mIncrementFreeMemoryPointer(mArrayLengthPointer_, add(0x20, mul(arrayLength, 0x20)))
+                }
                 
                 mArrayLengthPointer := mArrayLengthPointer_
+            }
+
+            function decodeAsBytes(cdOffset) -> mBytesLengthPointer {
+                // Get position and length of bytes from calldata
+                let cdOffsetOfBytesPosition := add(4, mul(cdOffset, 0x20))
+                let cdOffsetOfBytes := calldataload(cdOffsetOfBytesPosition)
+                let cdBytesLengthPosition := add(4, cdOffsetOfBytes)
+                let bytesLength := calldataload(cdBytesLengthPosition)
+
+                // Store bytes length in memory
+                let mBytesLengthPointer_ := mload(0x00)
+                mAppendWordToFreeMemory(mBytesLengthPointer_, bytesLength)
+
+                if bytesLength {
+                    let bytesWords := add(div(bytesLength, 0x20), 1)
+
+                    // Copy bytes data into free memory after length
+                    calldatacopy(add(mBytesLengthPointer_, 0x20), add(cdBytesLengthPosition, 0x20), bytesWords)
+
+                    // Increment free memory pointer to after bytes data
+                    mIncrementFreeMemoryPointer(mBytesLengthPointer_, add(0x20, bytesWords))
+                }
+
+                mBytesLengthPointer := mBytesLengthPointer_
             }
 
             /**
@@ -740,10 +765,10 @@ object "YULRC1155" {
             function mAppendArrayToFreeMemory(mLocation, mArrayLengthPointer) {
                 let arrayLength := mload(mArrayLengthPointer)
 
-                for { let i := 0 } lt(i, arrayLength) { i := add(i, 1) }
+                for { let i := 1 } lt(i, add(arrayLength, 1)) { i := add(i, 1) }
                 {
-                    let data := mload(add(add(mArrayLengthPointer, mul(i, 0x20)), 0x20))
-                    mstore(add(mLocation, mul(i, 0x20)), data)
+                    let data := mload(add(mArrayLengthPointer, mul(i, 0x20)))
+                    mstore(add(mLocation, sub(mul(i, 0x20), 0x20)), data)
                 }
 
                 mIncrementFreeMemoryPointer(mload(0), mul(arrayLength, 0x20))
