@@ -20,7 +20,7 @@ object "YULRC1155" {
         sstore(0, caller())
 
         // Dev: hardcode storage for uri 'https://token-cdn-domain/{id}.json'
-        sstore(3, 0x22)
+        sstore(3, 0x22) // length
         sstore(4, 0x68747470733a2f2f746f6b656e2d63646e2d646f6d61696e2f7b69647d2e6a73)
         sstore(5, 0x6f6e000000000000000000000000000000000000000000000000000000000000)
 
@@ -38,17 +38,17 @@ object "YULRC1155" {
             /**
              * Storage slots
              */
-            // 0: address owner
-            function ownerSlot() -> slot { slot := 0 }
+            // 0: address `owner`
+            function sOwnerSlot() -> slot { slot := 0 }
 
-            // 1: mapping uint256 tokenID => (address account => uint256 balance)
-            function balancesSlot() -> slot { slot := 1 }
+            // 1: mapping uint256 `tokenID` => (address `account` => uint256 `balance`)
+            function sBalancesSlot() -> slot { slot := 1 }
 
-            // 2: mapping address account => (address operator => bool approved)
-            function operatorApprovalsSlot() -> slot { slot := 2 }
+            // 2: mapping address `account` => (address `operator` => bool `approved`)
+            function sOperatorApprovalsSlot() -> slot { slot := 2 }
 
-            // 3: uint256 uri length
-            function uriLengthSlot() -> slot { slot := 3 }
+            // 3: uint256 `uri` length
+            function sUriLengthSlot() -> slot { slot := 3 }
 
             /**
              * Dispatcher
@@ -84,7 +84,7 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUint(2), 
                     decodeAsUint(3), 
-                    decodeAsBytesArray(4)
+                    decodeAsArray(4)
                 )
             }
             // safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
@@ -94,16 +94,21 @@ object "YULRC1155" {
                     decodeAsAddress(1), 
                     decodeAsUintArray(2), 
                     decodeAsUintArray(3), 
-                    decodeAsBytesArray(4)
+                    decodeAsArray(4)
                 )
             }
             // mint(address,uint256,uint256,bytes)
             case 0x731133e9 {
-                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsBytesArray(3))
+                mint(decodeAsAddress(0), decodeAsUint(1), decodeAsUint(2), decodeAsArray(3))
             }
             // mintBatch(address,uint256[],uint256[],bytes)
             case 0x1f7fdffa {
-                mintBatch(decodeAsAddress(0), decodeAsUintArray(1), decodeAsUintArray(2), decodeAsBytesArray(3))
+                mintBatch(
+                    decodeAsAddress(0), 
+                    decodeAsUintArray(1), 
+                    decodeAsUintArray(2), 
+                    decodeAsArray(3)
+                )
             }
             // burn(address,uint256,uint256)
             case 0xf5298aca {
@@ -133,11 +138,11 @@ object "YULRC1155" {
             }
 
             function decodeAsAddressArray(cdOffset) -> value {
-                value := decodeAsBytesArray(cdOffset)
+                value := decodeAsArray(cdOffset)
             }
 
             function decodeAsUintArray(cdOffset) -> value {
-                value := decodeAsBytesArray(cdOffset)
+                value := decodeAsArray(cdOffset)
             }
 
             function decodeAsUint(cdOffset) -> value {
@@ -157,25 +162,25 @@ object "YULRC1155" {
                 value := valueAtPosition
             }
 
-            function decodeAsBytesArray(cdOffset) -> mBytesArrayLengthPointer {
-                // Get position and length of bytes from calldata
-                let cdOffsetOfBytesPosition := add(4, mul(cdOffset, 0x20))
-                let cdOffsetOfBytes := calldataload(cdOffsetOfBytesPosition)
-                let cdBytesLengthPosition := add(4, cdOffsetOfBytes)
-                let bytesLength := calldataload(cdBytesLengthPosition)
+            function decodeAsArray(cdOffset) -> mArrayLengthPointer {
+                // Get position and length of array from calldata
+                let cdOffsetOfArrayPosition := add(4, mul(cdOffset, 0x20))
+                let cdOffsetOfArray := calldataload(cdOffsetOfArrayPosition)
+                let cdArrayLengthPosition := add(4, cdOffsetOfArray)
+                let arrayLength := calldataload(cdArrayLengthPosition)
 
-                // Store bytes length in free memory
+                // Store array length in free memory
                 let mFreeMemoryPointer := mload(0x00)
-                let mBytesArrayLengthPointer_ := mFreeMemoryPointer
-                mstore(mBytesArrayLengthPointer_, bytesLength)
+                let mArrayLengthPointer_ := mFreeMemoryPointer
+                mstore(mArrayLengthPointer_, arrayLength)
 
-                // Copy bytes data into free memory after length
-                calldatacopy(add(mFreeMemoryPointer, 0x20), add(cdBytesLengthPosition, 0x20), mul(bytesLength, 0x20))
+                // Copy array data into free memory after length
+                calldatacopy(add(mFreeMemoryPointer, 0x20), add(cdArrayLengthPosition, 0x20), mul(arrayLength, 0x20))
 
-                // Increment free memory pointer to after bytes array
-                incrementFreeMemoryPointer(mFreeMemoryPointer, add(0x20, mul(bytesLength, 0x20)))
+                // Increment free memory pointer to after array array
+                mIncrementFreeMemoryPointer(mFreeMemoryPointer, add(0x20, mul(arrayLength, 0x20)))
                 
-                mBytesArrayLengthPointer := mBytesArrayLengthPointer_
+                mArrayLengthPointer := mArrayLengthPointer_
             }
 
             /**
@@ -210,7 +215,7 @@ object "YULRC1155" {
              * ERC1155 functions
              */
             function uri(id) {
-                let uriLength := sload(uriLengthSlot())
+                let uriLength := sload(sUriLengthSlot())
 
                 // Store uri string offset within response
                 mstore(0x00, 0x20)
@@ -221,7 +226,7 @@ object "YULRC1155" {
                 // Store uri string data
                 for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
                 {
-                    let dataSlot := add(uriLengthSlot(), i)
+                    let dataSlot := add(sUriLengthSlot(), i)
                     let uriData := sload(dataSlot)
 
                     mstore(add(0x20, mul(i, 0x20)), uriData)
@@ -234,12 +239,12 @@ object "YULRC1155" {
             function balanceOf(account, id) -> accountBalance {
                 revertIfZeroAddress(account)
 
-                let sBalanceKey := getAccountBalanceKey(account, id)
+                let sBalanceKey := sGetAccountBalanceKey(account, id)
 
                 accountBalance := sload(sBalanceKey)
             }
 
-            function balanceOfBatch(mAccountsArrayLengthPointer, mIdsArrayLengthPointer) -> mBalancesArrayLengthPosition {
+            function balanceOfBatch(mAccountsArrayLengthPointer, mIdsArrayLengthPointer) -> mBalancesArrayLengthPointer {
                 let accountsArrayLength := mload(mAccountsArrayLengthPointer)
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
 
@@ -247,15 +252,12 @@ object "YULRC1155" {
 
                 // Store length of balances array to return at free memory pointer
                 let mFreeMemoryPointer := mload(0x00)
-                let mBalancesArrayLengthPosition_ := mFreeMemoryPointer
-                mstore(mBalancesArrayLengthPosition_, accountsArrayLength)
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                let mBalancesArrayLengthPointer_ := mFreeMemoryPointer
+                mAppendWordToFreeMemory(mBalancesArrayLengthPointer_, accountsArrayLength)
 
                 // For each account, load its token id balance into balances array
                 for { let i := 1 } lt(i, add(accountsArrayLength, 1)) { i := add(i, 1) }
                 {
-                    mFreeMemoryPointer := mload(0x00)
-
                     // Get account and id at this index position
                     let account := mload(add(mAccountsArrayLengthPointer, mul(i, 0x20)))
                     revertIfNotValidAddress(account)
@@ -264,18 +266,16 @@ object "YULRC1155" {
                     // Get account balance
                     let accountBalance := balanceOf(account, id)
 
-                    mstore(mFreeMemoryPointer, accountBalance)
-
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                    mAppendWordToFreeMemory(mload(0x00), accountBalance)
                 }
 
-                mBalancesArrayLengthPosition := mBalancesArrayLengthPosition_
+                mBalancesArrayLengthPointer := mBalancesArrayLengthPointer_
             }
 
             function setApprovalForAll(operator, approved) {
                 revertIfEqual(caller(), operator)
 
-                let sOperatorApprovalKey := getOperatorApprovalKey(caller(), operator)
+                let sOperatorApprovalKey := sGetOperatorApprovalKey(caller(), operator)
 
                 sstore(sOperatorApprovalKey, approved)
 
@@ -283,7 +283,7 @@ object "YULRC1155" {
             }
 
             function isApprovedForAll(account, operator) -> isApproved {
-                let sOperatorApprovalKey := getOperatorApprovalKey(account, operator)
+                let sOperatorApprovalKey := sGetOperatorApprovalKey(account, operator)
 
                 isApproved := sload(sOperatorApprovalKey)
             }
@@ -291,13 +291,13 @@ object "YULRC1155" {
             function _transfer(from, to, id, amount) {
                 revertIfZeroAddress(to)
 
-                // If `from` not equal to `caller()`
+                // Revert if `from` not equal to `caller()`
                 if iszero(eq(from, caller())) {
                     revertIfOperatorNotApproved(from, caller())
                 }
 
                 // Decrement `from` account balance for `id` by `amount`
-                let sFromAccountBalanceKey := getAccountBalanceKey(from, id)
+                let sFromAccountBalanceKey := sGetAccountBalanceKey(from, id)
                 let fromAccountBalance := sload(sFromAccountBalanceKey)
                 
                 revertIfBalanceInsufficient(fromAccountBalance, amount)
@@ -305,7 +305,7 @@ object "YULRC1155" {
                 sstore(sFromAccountBalanceKey, sub(fromAccountBalance, amount))
 
                 // Increment `to` account balance for `is` by `amount`
-                let sToAccountBalanceKey := getAccountBalanceKey(to, id)
+                let sToAccountBalanceKey := sGetAccountBalanceKey(to, id)
                 let toAccountBalance := sload(sToAccountBalanceKey)
 
                 sstore(sToAccountBalanceKey, add(toAccountBalance, amount))
@@ -364,7 +364,7 @@ object "YULRC1155" {
             function _mint(to, id, amount) {
                 revertIfZeroAddress(to)
 
-                let sAccountBalanceKey := getAccountBalanceKey(to, id)
+                let sAccountBalanceKey := sGetAccountBalanceKey(to, id)
                 let accountBalance := sload(sAccountBalanceKey)
 
                 sstore(sAccountBalanceKey, add(accountBalance, amount))
@@ -408,7 +408,7 @@ object "YULRC1155" {
             function _burn(from, id, amount) {
                 revertIfZeroAddress(from)
 
-                let sAccountBalanceKey := getAccountBalanceKey(from, id)
+                let sAccountBalanceKey := sGetAccountBalanceKey(from, id)
                 let accountBalance := sload(sAccountBalanceKey)
 
                 revertIfBalanceInsufficient(accountBalance, amount)
@@ -555,8 +555,8 @@ object "YULRC1155" {
                 if dataLength {
                     for { let i := 1 } lt(i, add(2, div(dataLength, 0x20))) { i := add(i, 1) }
                     {
-                        let data_ := mload(add(data, mul(i, 0x20)))
-                        mstore(add(dataLengthPointer, mul(i, 0x20)), data_)
+                        let bytesData := mload(add(data, mul(i, 0x20)))
+                        mstore(add(dataLengthPointer, mul(i, 0x20)), bytesData)
                     }
                 }
 
@@ -567,7 +567,9 @@ object "YULRC1155" {
                     0, // wei to include
                     mFreeMemoryPointer, // input start
                     add(
+                        // Static data and length of first two dynamic arrays
                         add(0xa4, mul(2, add(0x20, mul(idsArrayLength, 0x20)))), 
+                        // Dynamic bytes array `data`
                         add(0x40, mul(0x20, div(dataLength, 0x20)))
                     ), // input size
                     mFreeMemoryPointer, // output start
@@ -594,6 +596,16 @@ object "YULRC1155" {
 
                 mstore(0x00, id)
                 mstore(0x20, value)
+
+                /**
+                 * event TransferSingle
+                 * 
+                 * address indexed `_operator`
+                 * address indexed `_from`
+                 * address indexed `_to`
+                 * uint256 `_id`
+                 * uint256 `_value`
+                 */
                 log4(0x00, 0x40, signatureHash, operator, from, to)
             }
 
@@ -612,48 +624,28 @@ object "YULRC1155" {
                 let idsArrayLength := mload(mIdsArrayLengthPointer)
                 let amountsArrayLength := mload(mAmountsArrayLengthPointer)
                 
-                // Store offset of id's array
-                mstore(mIdsArrayOffsetPointer, 0x40) 
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                
-                // Store offset of amounts array
-                mFreeMemoryPointer := mload(0x00)
+                // Store array offsets
+                mAppendWordToFreeMemory(mIdsArrayOffsetPointer, 0x40)
                 let amountsArrayOffset := add(mul(idsArrayLength, 0x20), 0x60)
-                mstore(mFreeMemoryPointer, amountsArrayOffset) 
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                mAppendWordToFreeMemory(mload(0x00), amountsArrayOffset)
 
-                // Store id's array length
-                mFreeMemoryPointer := mload(0x00)
-                mstore(mFreeMemoryPointer, idsArrayLength)
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
+                // Store `_ids` array
+                mAppendWordToFreeMemory(mload(0x00), idsArrayLength)
+                mAppendArrayToFreeMemory(mload(0x00), mIdsArrayLengthPointer)
 
-                // Store copy of id's array items
-                for { let i := 1 } lt(i, add(idsArrayLength, 1)) { i := add(i, 1) }
-                {
-                    mFreeMemoryPointer := mload(0x00)
+                // Store `_values` array
+                mAppendWordToFreeMemory(mload(0x00), amountsArrayLength)
+                mAppendArrayToFreeMemory(mload(0x00), mAmountsArrayLengthPointer)
 
-                    let value := mload(add(mIdsArrayLengthPointer, mul(i, 0x20)))
-                    mstore(mFreeMemoryPointer, value)
-
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                }
-
-                // Store amounts array length
-                mFreeMemoryPointer := mload(0x00)
-                mstore(mFreeMemoryPointer, amountsArrayLength)
-                incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-
-                // Store copy of amounts array items
-                for { let i := 1 } lt(i, add(amountsArrayLength, 1)) { i := add(i, 1) }
-                {
-                    mFreeMemoryPointer := mload(0x00)
-
-                    let value := mload(add(mAmountsArrayLengthPointer, mul(i, 0x20)))
-                    mstore(mFreeMemoryPointer, value)
-
-                    incrementFreeMemoryPointer(mFreeMemoryPointer, 0x20)
-                }
-
+                /**
+                 * event TransferBatch
+                 * 
+                 * address indexed `_operator`
+                 * address indexed `_from`
+                 * address indexed `_to`
+                 * uint256[] `_ids`
+                 * uint256[] `_values`
+                 */
                 log4(
                     mIdsArrayOffsetPointer, 
                     add(add(amountsArrayOffset, 0x20), mul(amountsArrayLength, 0x20)), 
@@ -669,6 +661,14 @@ object "YULRC1155" {
                 let signatureHash := 0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31
 
                 mstore(0x00, approved)
+
+                /**
+                 * event ApprovalForAll
+                 * 
+                 * address indexed `owner`
+                 * address indexed `operator`
+                 * bool `_approved`
+                 */
                 log3(0x00, 0x20, signatureHash, owner, operator)
             }
 
@@ -676,48 +676,79 @@ object "YULRC1155" {
                 // keccak256("URI(string,uint256)")
                 let signatureHash := 0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b
 
-                let uriLength := sload(uriLengthSlot())
+                let uriLength := sload(sUriLengthSlot())
 
-                // Store uri string offset within response
+                // `uri` string offset within response
                 mstore(0x00, 0x20)
 
-                // Store uri string length
                 mstore(0x20, uriLength)
 
                 // Store uri string data
                 for { let i := 1 } lt(i, add(2, div(uriLength, 0x20))) { i := add(i, 1) }
                 {
-                    let dataSlot := add(uriLengthSlot(), i)
-                    let uriData := sload(dataSlot)
+                    let sDataSlot := add(sUriLengthSlot(), i)
+                    let uriData := sload(sDataSlot)
 
                     mstore(add(0x20, mul(i, 0x20)), uriData)
                 }
 
+                /**
+                 * event URI
+                 * 
+                 * string `_value`
+                 * uint256 indexed `id`
+                 */
                 log2(0x00, add(1, div(uriLength, 0x20)), signatureHash, id)
             }
 
             /**
              * Storage access functions
              */
-            function getAccountBalanceKey(account, tokenId) -> sBalanceKey {
-                // Balances: mapping uint256 tokenID => (address account => uint256 balance)
+            function sGetAccountBalanceKey(account, tokenId) -> sBalanceKey {
+                // Balances: mapping uint256 `tokenID` => (address `account` => uint256 `balance`)
                 
-                // Hash `tokenId` and `balancesSlot()`
-                let hashOfIdandBalancesSlot := keccakHashTwoValues(tokenId, balancesSlot())
+                // Hash `tokenId` and `sBalancesSlot()`
+                let hashOfIdandBalancesSlot := keccakHashTwoValues(tokenId, sBalancesSlot())
 
-                // `sBalanceKey` = keccak256(`account`, keccak256(`tokenId`, `balancesSlot()`))
+                // `sBalanceKey` = keccak256(`account`, keccak256(`tokenId`, `sBalancesSlot()`))
                 sBalanceKey := keccakHashTwoValues(account, hashOfIdandBalancesSlot)
             }
 
-            function getOperatorApprovalKey(account, operator) -> sOperatorApprovalKey {
-                // Approvals: mapping address account => (address operator => bool approved)
+            function sGetOperatorApprovalKey(account, operator) -> sOperatorApprovalKey {
+                // Approvals: mapping address `account` => (address `operator` => bool `approved`)
 
-                // Hash `operator` and `operatorApprovalsSlot()`
-                let hashOfAccountAndOperatorApprovalsSlot := keccakHashTwoValues(account, operatorApprovalsSlot())
+                // Hash `operator` and `sOperatorApprovalsSlot()`
+                let hashOfAccountAndOperatorApprovalsSlot := keccakHashTwoValues(account, sOperatorApprovalsSlot())
 
-                // `sOperatorApprovalKey` = keccak256(`operator`, keccak256(`account`, `operatorApprovalsSlot()`))
+                // `sOperatorApprovalKey` = keccak256(`operator`, keccak256(`account`, `sOperatorApprovalsSlot()`))
                 sOperatorApprovalKey := keccakHashTwoValues(operator, hashOfAccountAndOperatorApprovalsSlot)
             }
+
+            /**
+             * Memory functions
+             */
+            function mIncrementFreeMemoryPointer(currentValue, incrementBy) {
+                mstore(0x00, add(currentValue, incrementBy))
+            }
+
+            function mAppendWordToFreeMemory(mLocation, value) {
+                mstore(mLocation, value)
+
+                mIncrementFreeMemoryPointer(mLocation, 0x20)
+            }
+
+            function mAppendArrayToFreeMemory(mLocation, mArrayLengthPointer) {
+                let arrayLength := mload(mArrayLengthPointer)
+
+                for { let i := 0 } lt(i, arrayLength) { i := add(i, 1) }
+                {
+                    let data := mload(add(add(mArrayLengthPointer, mul(i, 0x20)), 0x20))
+                    mstore(add(mLocation, mul(i, 0x20)), data)
+                }
+
+                mIncrementFreeMemoryPointer(mload(0), mul(arrayLength, 0x20))
+            }
+
 
             /**
              * Gating functions
@@ -729,7 +760,7 @@ object "YULRC1155" {
             }
 
             function revertIfCallerNotOwner() {
-                let owner := sload(ownerSlot())
+                let owner := sload(sOwnerSlot())
 
                 if iszero(eq(caller(), owner)) {
                     revert(0, 0)
@@ -763,14 +794,13 @@ object "YULRC1155" {
                 }
             }
 
-            function revertIfBalanceInsufficient(accountBalance, amount) {
+            function revertIfBalanceInsufficient(balance_, amount) {
                 let gte := 0
 
-                if gt(accountBalance, amount) {
+                if gt(balance_, amount) {
                     gte := 1
                 }
-
-                if eq(accountBalance, amount) {
+                if eq(balance_, amount) {
                     gte := 1
                 }
                 
@@ -792,7 +822,7 @@ object "YULRC1155" {
             }
 
             function revertIfOperatorNotApproved(account, operator) {
-                let sOperatorApprovalKey := getOperatorApprovalKey(account, operator)
+                let sOperatorApprovalKey := sGetOperatorApprovalKey(account, operator)
                 let operatorIsApproved := sload(sOperatorApprovalKey)
 
                 if iszero(operatorIsApproved) {
@@ -803,10 +833,6 @@ object "YULRC1155" {
             /**
              * Utility functions
              */
-            function incrementFreeMemoryPointer(currentValue, incrementBy) {
-                mstore(0x00, add(currentValue, incrementBy))
-            }
-
             function keccakHashTwoValues(valueOne, valueTwo) -> keccakHash {
                 let mFreeMemoryPointer := mload(0x00)
 
