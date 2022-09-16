@@ -126,7 +126,7 @@ object "YULRC1155" {
              * Calldata decoding functions
              */
             function functionSelector() -> selector {
-                // Shift right by 224 bits leaving the first 4 bytes
+                // Shift right by 28 bytes leaving the first 4 bytes
                 selector := shr(0xE0, calldataload(0))
             }
 
@@ -773,7 +773,6 @@ object "YULRC1155" {
 
                 mIncrementFreeMemoryPointer(mload(0), mul(arrayLength, 0x20))
             }
-
 
             /**
              * Gating functions
